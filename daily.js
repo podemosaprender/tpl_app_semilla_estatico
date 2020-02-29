@@ -27,6 +27,12 @@ function onFork() {
 }
 
 function onWrite() {
+	var fname= GhUser+"/xprueba/hola2.txt";
+	get_file_github_p(fname, GhOpts).then(x=> (dd=x)).then(fLog("lei"))
+	.then(() => {
+		set_file_github_p({fname: fname, sha: dd.sha}, "somos re grossos "+(new Date()), GhOpts).then(fLog("guarde!"))
+	});
+	//A: tengo que leer para coseguir el sha y poder escribir, si no existia no hay problema
 }
 
 function scr_daily(my) {
