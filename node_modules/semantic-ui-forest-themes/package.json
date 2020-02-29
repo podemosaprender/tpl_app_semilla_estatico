@@ -1,0 +1,41 @@
+{
+  "_from": "semantic-ui-forest-themes@^1.0.3",
+  "_id": "semantic-ui-forest-themes@1.0.3",
+  "_inBundle": false,
+  "_integrity": "sha512-BwERR+8a2v5w3zb4MKK+SxKCIfeg1YhfaBLEtegjADWjXE84t5v50AGUW0AMv8p3mvFGIRUrDZsyPNtotmBwyQ==",
+  "_location": "/semantic-ui-forest-themes",
+  "_phantomChildren": {},
+  "_requested": {
+    "type": "range",
+    "registry": true,
+    "raw": "semantic-ui-forest-themes@^1.0.3",
+    "name": "semantic-ui-forest-themes",
+    "escapedName": "semantic-ui-forest-themes",
+    "rawSpec": "^1.0.3",
+    "saveSpec": null,
+    "fetchSpec": "^1.0.3"
+  },
+  "_requiredBy": [
+    "/"
+  ],
+  "_resolved": "https://registry.npmjs.org/semantic-ui-forest-themes/-/semantic-ui-forest-themes-1.0.3.tgz",
+  "_shasum": "cead7116ff34edeacf7f7fb68f6ff3e3ae66cdfd",
+  "_spec": "semantic-ui-forest-themes@^1.0.3",
+  "_where": "/home/usr10/devel/0pa/clases_web/semilla",
+  "author": {
+    "name": "Neil Glover"
+  },
+  "bundleDependencies": false,
+  "dependencies": {
+    "jquery": "x.*"
+  },
+  "deprecated": false,
+  "description": "Semantic ui forest themes is a collection of css styles in a single npm package based on http://semantic-ui-forest.com/themes",
+  "homepage": "http://www.semantic-ui.com",
+  "license": "MIT",
+  "main": "semantic.js",
+  "name": "semantic-ui-forest-themes",
+  "repository": {},
+  "title": "Semantic UI react Themes based on the ",
+  "version": "1.0.3"
+}
