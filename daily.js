@@ -24,16 +24,16 @@ function scr_daily(my) {
 	}
 
 	my.render= function (props,state) {
-		return h(Cmp.Container,{},
-			cmp({cmp: 'Form', error: true, children: [
-				{cmp: 'Form.Group', widths:'equal', children: [
-					{cmp: 'Form.Input', fluid: true, label:'Github User', placeholder:'username', onChange: e => onUser(e) },
-					{cmp: 'Form.Input', type:'password',fluid: true, label:'Github Pass', placeholder:'pass', onChange: e => onPass(e) },
+		return {cmp: 'Container', children: [
+				{cmp: 'Form', error: true, children: [
+					{cmp: 'Form.Group', widths:'equal', children: [
+						{cmp: 'Form.Input', fluid: true, label:'Github User', placeholder:'username', onChange: e => onUser(e) },
+						{cmp: 'Form.Input', type:'password',fluid: true, label:'Github Pass', placeholder:'pass', onChange: e => onPass(e) },
+					]},
+					{cmp: 'Form.Button', txt: 'Login', onClick: uiOnLogin},
 				]},
-				{cmp: 'Form.Button', txt: 'Login', onClick: uiOnLogin},
-			]}
-		),
-			 GhRepos==null ? 'Todavia no cargue los repos' : {cmp: 'ul', children: GhRepos.map( d => ({cmp:'li', children: [ d.name ]})) }
-			);
+
+			 	GhRepos==null ? 'Todavia no cargue los repos' : {cmp: 'ul', children: GhRepos.map( d => ({cmp:'li', children: [ d.name ]})) }
+			]};
 	}
 }
