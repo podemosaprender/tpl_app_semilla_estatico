@@ -1,7 +1,9 @@
 GhUser= null;
 GhPass= null;
+GhOpts= null;
 function onLogin() {
-	console.log("Pidio login", GhUser, GhPass);
+	console.log("Pidio login", GhUser, "*****");
+	GhOpts= {user: GhUser, pass: GhPass};
 }
 
 function onUser(e) {
