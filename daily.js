@@ -1,6 +1,7 @@
 GhUser= null;
 GhPass= null;
 GhOpts= null;
+GhWeb= null;
 
 GhRepos= null;
 function onLogin() {
@@ -18,6 +19,16 @@ function onPass(e) {
 	GhPass= e.target.value;
 }
 
+function onFork() {
+	fork_github_p('podemosaprender/xprueba', GhOpts).then(fLog("fork listo"))
+	.then(() => webEnable_github_p(GhUser+'/xprueba',GhOpts))
+	.then( res => { GhWeb= res.html_url } )
+	.then(fLog("Web Publish listo "+GhWeb));
+}
+
+function onWrite() {
+}
+
 function scr_daily(my) {
 	function uiOnLogin() {
 		onLogin().then(x => my.refresh());
@@ -31,7 +42,11 @@ function scr_daily(my) {
 						{cmp: 'Form.Input', type:'password',fluid: true, label:'Github Pass', placeholder:'pass', onChange: e => onPass(e) },
 					]},
 					{cmp: 'Form.Button', txt: 'Login', onClick: uiOnLogin},
+					{cmp: 'Form.Button', txt: 'Fork', onClick: onFork},
+					{cmp: 'Form.Button', txt: 'Write', onClick: onWrite},
+
 				]},
+				GhWeb==null ? 'Todavia no hay web' : {cmp: 'a', href: GhWeb},
 
 			 	GhRepos==null ? 'Todavia no cargue los repos' : {cmp: 'ul', children: GhRepos.map( d => ({cmp:'li', children: [ d.name ]})) }
 			]};
