@@ -479,7 +479,7 @@ else {
 }
 
 console.log("MAIN",main);
-loadJs(main).then( x => {
+loadJs(main+'?_'+Date.now()).then( x => {
 	console.log("AppStarted "+x);
 	AppStart();
 });
