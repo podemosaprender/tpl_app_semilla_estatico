@@ -1,3 +1,5 @@
+document.title='CatzWriter';
+
 SinAcentosIn= "áéíóúüñÁÉÍÓÚÜÑ";
 SinAcentosOut= "aeiouu~AEIOUU~";
 
