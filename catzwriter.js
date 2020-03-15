@@ -1,15 +1,5 @@
 document.title='CatzWriter';
 
-SinAcentosIn= "áéíóúüñÁÉÍÓÚÜÑ";
-SinAcentosOut= "aeiouu~AEIOUU~";
-
-function sinAcentos(s) { //U: devuelve s pero con los caracteres sin tildes, etc.
-	return s.replace(
-		new RegExp('(['+SinAcentosIn+'])','g'), 
-		(_,c) => SinAcentosOut[SinAcentosIn.indexOf(c)] 
-	);
-}
-
 function refreshWith(my,fun, ... args) { //U: devuelve una funcion para onClick y hacer refresh despues
 	return function () {
 		fun.apply(null,args);

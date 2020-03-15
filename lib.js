@@ -196,6 +196,13 @@ function toSequelize(v) { //U: convierte nuestra definicion a la que necesita se
 //S: github via api
 
 function mifetch(url = '', data, options={}) { //U: post usando "fetch", mas comodo
+	if (options.corsProxy) {
+		options.corsProxyNoWarn || console.warn("Using third party proxy to access "+url);
+		url= 'https://cors-anywhere.herokuapp.com/'+url;
+		options.headers= options.headers || {};
+		options.headers['Origin']= options.headers['Origin'] || '*'; //A: lo requiere el proxy
+	}
+
   var fetchOpts= {
 		method: options.method || "GET", // *GET, POST, PUT, DELETE, etc.
 		mode: "cors", // no-cors, cors, *same-origin
@@ -217,11 +224,6 @@ function mifetch(url = '', data, options={}) { //U: post usando "fetch", mas com
     fetchOpts.body= JSON.stringify(data); // body data type must match "Content-Type" header
   }
  
-	if (options.corsProxy) {
-		options.corsProxyNoWarn || console.warn("Using third party proxy to access "+url);
-		url= 'https://cors-anywhere.herokuapp.com/'+url;
-	}
-
   return fetch(url, fetchOpts)
     .then(response => (options.asText ? response.text() : response.json())); // parses JSON response into native Javascript objects 
 }
