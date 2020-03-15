@@ -28,6 +28,11 @@ function paramsToTypeKv() { //U: devuelve un kv con los params separados por tip
 	return r;
 }
 
+function getWidth() {
+  const isSSR = typeof window === 'undefined';
+  return isSSR ? Responsive.onlyTablet.minWidth : window.innerWidth;
+}
+
 function set_style_dom(csstxt) { //U: define estilos usando css (en especial clases)
 	var style = document.createElement('style');
 	style.type = 'text/css';
@@ -95,6 +100,30 @@ function run_tests_p() {
 //S: UI: pReact + Router + Semantic UI, pero mas comodo
 Routes= {}; //U: RUTAS PREACT ROUTE, path -> {cmp: componente }, las usa la pantalla principal
 
+function fRef(k,dst) { //U: para pasar como parametro a "ref" de pReact y guardarse la referencia
+	return function (e) { set_p(dst,k, e); }
+}
+
+function fId(x) { return x; }
+
+function asFun(x) { //U: devuelve x si es funcion, sino una funcion que busca en x
+	return (typeof(x)=='function') ? x 
+					: (x!=null && typeof(x)=='object') ? function (k) { return x[k] }
+					: (x!= null) ? function (ignored) { return x }
+					: fId;
+}
+
+function fSetValue(k,dst, xfrm) { //U: una funcion que recive e, y guarda e.target.value en la clave k de dst, llama refresh si dst tiene esa funcion
+	var xfrm= asFun(xfrm); //A: siempre lo transformamos de alguna manera, aunque sea fId
+	return function (e) { 
+		var v= typeof(e)=='object' && e.target ? e.target.value : e; //A: si es evento, value, sino el valor en si
+		var vt= xfrm(v,get_p(dst,k)); //A: llamamos xfrm con el valor nuevo y el anterior
+		set_p(dst,k, vt); 
+		if (typeof(dst.refresh)=='function') dst.refresh(); 
+	}
+}
+
+
 function cmpAct() { //U: un elemento accionable tipo boton
 	var d= paramsToTypeKv.apply(null,arguments);	
 	d.kv.children= d.array || (d.txt && [d.txt]);
@@ -110,7 +139,7 @@ function cmpOut() { //U: elemento de salida tipo div
 	var d= paramsToTypeKv.apply(null,arguments);	
 	d.kv.children= d.array || (d.txt && [d.txt]);
 	d.kv.onClick= d.f;
-	return h(d.kv.cmp || 'div', d.kv);
+	return h(d.kv.cmp || Cmp.Fragment, d.kv);
 }
 
 function cmpGroup() { //U: array con grupo de elementos
@@ -121,12 +150,16 @@ function cmp() { //U: elemento "si adivina" que tipo
 	var d= paramsToTypeKv.apply(null,arguments);	
 	//A: separamos los params en kv, array y f
 	d.kv.children= d.kv.children || d.array;
-	console.log("cmp A",d.kv);
+	//DBG console.log("cmp A",d.kv);
+	d.kv.children= (d.kv.children && !Array.isArray(d.kv.children)) ? [d.kv.children] : d.kv.children;
 	d.kv.children= (d.kv.children && Array.isArray(d.kv.children)) ? 
 		d.kv.children.map( p => {
-			var isObjectButNotCmp= (typeof(p)=='object' && p.$$typeof!=Symbol.for("react.element"));
-			var r= isObjectButNotCmp ? cmp(p) : p; //A: si no era cmp, llamamos a esta misma
-			logm("DBG",9,"cmp children",{isObjectButNotCmp, p, r});
+			var r= p; //DFLT
+			if (typeof(p)=='object' && p!=null) {
+				var isObjectButNotCmp= p.$$typeof!=Symbol.for("react.element");
+				r= isObjectButNotCmp ? cmp(p) : p; //A: si no era cmp, llamamos a esta misma
+				//DBG logm("DBG",9,"cmp children",{isObjectButNotCmp, p, r});
+			}
 			return r;
 		})
 		: ((d.txt || d.kv.txt)!=null ? [d.txt || d.kv.txt] : null);
@@ -140,9 +173,9 @@ function cmp() { //U: elemento "si adivina" que tipo
 		}
 	}
 	//A: si cmp era el path a uno en Cmp, pusimos el objeto
-	console.log("cmp Z",d.kv);
+	//DBG console.log("cmp Z",d.kv);
 
-	return h(d.kv.cmp || d.f || 'div', d.kv.cmp ? d.kv : {children: d.kv.children});
+	return h(d.kv.cmp || d.f || Cmp.Fragment, d.kv.cmp ? d.kv : {children: d.kv.children});
 }
 
 function appGoTo(route) { //U: navega a una ruta
@@ -169,11 +202,24 @@ function CmpDef(f, proto) { //U: definir un componente de UI que se puede usar c
 	var myComponentDef= function (...args) {
 		var my= this; 
 		proto.apply(my,args);  //A: initialize with parent
+		my.state= my.state || {}; //A: siempre hay state
+
+		my.withValue= function (k, xfrm, dst) { 
+			if (k[0]!='{') k='{state{'+k; //A: set y get_p requieren que empiece con sep
+			dst= dst || my;
+			return { //U: conectar un input a estado usando { ... my.withValue('/pepe') }
+				onChange: fSetValue(k,dst,xfrm),
+				value: get_p(dst,k),
+			}
+		};
+
+		my.forValue= function (k,cmp, xfrm) { return Object.assign({cmp: 'Form.Input', placeholder: k, ... my.withValue(k,xfrm)}, cmp); }
+ 
 		f.apply(my,[my].concat(args));
 		//A: llamamos la funcion que define el componente con la instancia
 		my.renderImpl= my.render;
-		my.render= function () {
-			var x= my.renderImpl.apply(this,arguments);
+		my.render= function (props, state) {
+			var x= my.renderImpl.apply(this,[props,state]);
 			if (typeof(x)=='object') { 
 				if (x.$$typeof) { return x; } //A: es pReact
 				else { return cmp(x); }
@@ -265,7 +311,8 @@ COLOR.azulClaro= 'rgb(105,178,226)';
 COLOR.gris= 'rgb(194,195,201)';
 
 LAYOUT= { //U: para poder definir directamente CSS y cambiarlo desde cfg
-	BG_COLOR : COLOR.gris //U: el fondo la pagina para el sitio 
+	BG_COLOR: COLOR.gris, //U: el fondo la pagina para el sitio 
+	ICONS: {}, //U: iconos con nombre
 }
 
 VIDEO_ICON_URL= '/ui/imagenes/video_play.png'
@@ -340,7 +387,7 @@ function cmp_youtube(my) {
 //------------------------------------------------------------
 function cmp_PaMenu(my) {
 	my.render= function PaMenu_render(props) {
-		var elements= props.elements.map(t => {return {
+		var items= props.items.map(t => {return {
 			cmp: Cmp.Menu.Item, 
 			onClick: ()=> props.onClick(t), 
 			txt: t.match(/(.png|.jpg)$/) ? h('img',{src: t}) : t,
@@ -350,10 +397,127 @@ function cmp_PaMenu(my) {
 			cmp: Cmp.Menu, 
 			stackable: true, 
 			style: {marginBottom: '15px'}, 
-			children: [ {cmp: Cmp.Container,children: elements} ],
+			children: [ {cmp: Cmp.Container,children: items} ],
 		};
 
 		return menu;
+	}
+}
+
+function cmp_ContainerDesktop(my) {
+	function hideFixedMenu() {my.setState({ fixed: false })}
+  function showFixedMenu() {my.setState({ fixed: true })}
+
+	my.render= function (props, state) {
+		var fixed= state.fixed;
+		var children= props.children;
+		return {
+		 "cmp": "Responsive",
+		 "getWidth": getWidth, "minWidth": Cmp.Responsive.onlyTablet.minWidth,
+		 "children": [
+			{
+			 "cmp": "Visibility",
+				"onBottomPassed": showFixedMenu, "onBottomPassedReverse": hideFixedMenu, 
+				"once": false, 
+				"children": [
+				{
+				 "cmp": "Segment",
+				 "vertical": true,"textAlign": "center",
+				 "inverted": true, "style": { "minHeight": "1em 0em" },
+				 "children": [
+					{
+					 "cmp": "Menu",
+					 "fixed": fixed ? 'top' : null,
+					 "inverted": !fixed,
+					 "pointing": !fixed,
+					 "secondary": !fixed,
+					 "size": "large",
+					 "children": [
+						{
+						 "cmp": "Container",
+						 "children": props.items.map( it => (
+								{ "cmp": "Menu.Item", "as": "a", "children": it.match(/(.png|.jpg)$/) ? h('img',{src: it}) : it }
+							))
+						}
+					 ]
+					},
+				 ]
+				}
+			]
+			},
+			children
+		 ]
+		};
+	}
+}
+
+function cmp_ContainerMobile(my) {
+
+	my.handleSidebarHide= function () { my.setState({ sidebarOpened: false }); }
+  my.handleToggle= function () { my.setState({ sidebarOpened: true }); }
+
+	my.render= function (props, state) {
+		var sidebarOpened= state.sidebarOpened;
+		var children= props.children;
+
+		return {
+		 "cmp": "Responsive",
+		 "as": Cmp.Sidebar.Pushable,
+		 "getWidth": getWidth,
+		 "maxWidth": Cmp.Responsive.onlyMobile.maxWidth,
+		 "children": [
+			{
+			 "cmp": "Sidebar",
+			 "as": Cmp.Menu,
+			 "animation": "push", "inverted": true,
+			 "onHide": my.handleSidebarHide,
+			 "visible": sidebarOpened,
+			 "vertical": true,
+			 "children": props.items.map( it => (
+					{ "cmp": "Menu.Item", "as": "a", "children": it.match(/(.png|.jpg)$/) ? h('img',{src: it}) : it }
+				))
+			},
+			{
+			 "cmp": "Sidebar.Pusher",
+			 "dimmed": sidebarOpened,
+			 "children": [
+				{
+				 "cmp": "Segment",
+				 "vertical": true, "inverted": true,
+				 "textAlign": "center", "style": { "minHeight": "1em 0em" },
+				 "children": [
+					{
+					 "cmp": "Container",
+					 "children": [
+						{
+						 "cmp": "Menu",
+						 "inverted": true, "pointing": true, "secondary": true, "size": "large",
+						 "children": [
+							{
+							 "onClick": my.handleToggle,
+							 "cmp": "Menu.Item",
+							 "children": [ { "name": "sidebar", "cmp": "Icon" } ]
+							},
+						 ]
+						}
+					 ]
+					},
+				 ]
+				},
+				children
+			 ]
+			}
+		 ]
+		}
+	}
+}
+
+function cmp_ContainerResponsive(my) {
+	my.render= function(props) {
+		return {cmp: 'div', children: [
+			{... props, cmp: 'ContainerDesktop'},
+			{... props, cmp: 'ContainerMobile'},
+		]};
 	}
 }
 
@@ -469,6 +633,8 @@ function JSONtoHour(JSONdate) {
 //S: MAIN
 
 set_style_dom('.test .duration { margin-left: 2em; }');
+
+for (k in PRecharts) { Cmp[k]= PRecharts[k]; }
 
 m= location.href.match(/app=([^&#]+)/);
 if (m) { //A: habia un parametro 
