@@ -4,11 +4,26 @@ GLOBAL= window; //U: para acceder a todo lo definido
 
 /************************************************************************** */
 //S: utiles
-function loadJs(url) { //U: cargar js desde js, OjO! seguridad y eval ...
-	return fetch(url).then(r => r.text()).then(t => {
-		var src= '(async function loadJs_wrapper() {'+ 
+function xfrmJsToGlobals(t,url) { //U: para que function sean globales
+	var src= '(async function loadJs_wrapper() {\n'+ 
 			('\n'+t).replace(/\n(async\s+)?function ([^ \(]+)/g,"\n$2= $1 function $2") +
-		'\nreturn new Promise(r => r("'+url+'"));\n})()\n';
+		'\nreturn new Promise(r => r("'+url+'"));\n})()\n'+
+		'//# sourceURL='+url+'\n';
+	return src;
+}
+
+function loadJs(url) { //U: cargar js desde js, OjO! seguridad y eval ...
+	console.log("loadJs",url);
+	var proto= (url.match(/^([^:]+):/)||[])[1] || (runtimeEnv=='cordova' ? 'file' : 'http');
+	//A: calculamos que protocolo usar, puede venir SIN proto!
+	
+	var loadp= (proto=='file' || proto=='cdvfile')
+		? get_file_p(url,'txt')
+		: fetch(url).then(r => r.text())
+	
+	return loadp.then(t => {
+		//DBGconsole.log("loadJs then",url,t);
+		var src= xfrmJsToGlobals(t,url);
 		//DBG console.log(url,src);
 		var p= eval(src); //A: devuelve una promesa
 		return p;
@@ -113,12 +128,23 @@ function asFun(x) { //U: devuelve x si es funcion, sino una funcion que busca en
 					: fId;
 }
 
+function asArray(x) { //U: si x es escalar no nulo devuelve como Array, si es Array tal cual
+	return (x && !Array.isArray(x)) ? [x] : x;
+}
+
 function fSetValue(k,dst, xfrm) { //U: una funcion que recive e, y guarda e.target.value en la clave k de dst, llama refresh si dst tiene esa funcion
 	var xfrm= asFun(xfrm); //A: siempre lo transformamos de alguna manera, aunque sea fId
 	return function (e) { 
-		var v= typeof(e)=='object' && e.target ? e.target.value : e; //A: si es evento, value, sino el valor en si
-		var vt= xfrm(v,get_p(dst,k)); //A: llamamos xfrm con el valor nuevo y el anterior
-		set_p(dst,k, vt); 
+		XY= e;
+		var v= typeof(e)=='object' && e.target 
+			? ('value' in e.target)
+					? e.target.value 
+					: e.target.parentElement.children[0].checked //A: el checkbox es HORRIBLE
+			: e; //A: si es evento, value, sino el valor en si
+		var v0= get_p(dst,k);
+		var v1= xfrm(v,v0); //A: llamamos xfrm con el valor nuevo y el anterior
+		logm("DBG",3,"Value Set",{k,v,v1,v0});
+		set_p(dst,k, v1); 
 		if (typeof(dst.refresh)=='function') dst.refresh(); 
 	}
 }
@@ -204,16 +230,46 @@ function CmpDef(f, proto) { //U: definir un componente de UI que se puede usar c
 		proto.apply(my,args);  //A: initialize with parent
 		my.state= my.state || {}; //A: siempre hay state
 
-		my.withValue= function (k, xfrm, dst) { 
+		my.withValue= function (k, xfrm, dst, xfrmShow, onRef) { 
 			if (k[0]!='{') k='{state{'+k; //A: set y get_p requieren que empiece con sep
 			dst= dst || my;
-			return { //U: conectar un input a estado usando { ... my.withValue('/pepe') }
+			xfrmShow= asFun(xfrmShow);
+			onRef= asFun(onRef);
+
+			var v= get_p(dst,k);
+			var vs= xfrmShow(v);
+			var r= { //U: conectar un input a estado usando { ... my.withValue('/pepe') }
 				onChange: fSetValue(k,dst,xfrm),
-				value: get_p(dst,k),
+				value: vs,
+				ref: el => { onRef(el,vs)},
+			};
+			logm("DBG",3,"Value Get",{k,v,r});	
+			return r;	
+		};
+
+		my.setValue= function (k, xfrm, dst, cmp) { 
+			if (k[0]!='{') k='{state{'+k; //A: set y get_p requieren que empiece con sep
+			xfrm= xfrm==null ? true : xfrm; //DFLT
+			dst= dst || my;
+			var v= get_p(dst,k);
+			return { //U: conectar un input a estado usando { ... my.withValue('/pepe') }
+				onClick: fSetValue(k,dst,xfrm),
+				value: v,
+				active: cmp && cmp.toggle && (v==xfrm),
 			}
 		};
 
-		my.forValue= function (k,cmp, xfrm) { return Object.assign({cmp: 'Form.Input', placeholder: k, ... my.withValue(k,xfrm)}, cmp); }
+		my.forValue= function (k,cmp,xfrm,xfrmShow,onRef) { 
+			if (cmp && cmp.cmp=='Checkbox') { //A: necesita adaptacion :P
+				var xfrm0= asFun(xfrm);
+				xfrm= (_,vp) => (!vp); //A: toggle, lo contrario de lo que estaba
+				var onRef0= asFun(onRef0);
+				onRef= (e,v) => { e && e.setState({checked: v}); }; //A: hay que sincronizarlo a mano
+			}
+			return Object.assign({cmp: 'Form.Input', placeholder: k, ... my.withValue(k,xfrm,null,xfrmShow, onRef)}, cmp); 
+		}
+
+		my.toSet= function(k,xfrm,cmp) { return Object.assign({cmp: 'Button', children: k, ... my.setValue(k,xfrm,my,cmp)}, cmp);}
  
 		f.apply(my,[my].concat(args));
 		//A: llamamos la funcion que define el componente con la instancia
@@ -282,18 +338,20 @@ function CmpDefAuto() { //U: para todas las definiciones tipo function cmp_MiPan
 	}
 }
 
-function AppStart(theme) { //U: inicia la app!
+AppRoot_= GLOBAL.AppRoot_;
+function AppStart(theme, wantsRestart) { //U: inicia la app!
 	console.log("AppStart");
 	UiSetTheme(theme || 'chubby');
 	CmpDefAuto();
-	if (!Routes['/']) { //A: no hay main, tomar la ultima funcion
+	if (wantsRestart || !Routes['/']) { //A: no hay main, tomar la ultima funcion
 		var main_k=null;
 		Object.keys(Cmp).map(k => { if (k.match(/scr_/)) { main_k= k }});
 		console.log("AppStart main inferred "+main_k);
 		Routes['/']= {cmp: Cmp[main_k]};
 		//A: dejamos como main la ultima scr_ que se definion
 	}
-	render(h(Cmp.Main), document.body);
+	if (AppRoot_) { render(null, document.body, AppRoot_);}
+	AppRoot_= render(h(Cmp.Main), document.body);
 }
 
 /************************************************************************** */
@@ -387,16 +445,17 @@ function cmp_youtube(my) {
 //------------------------------------------------------------
 function cmp_PaMenu(my) {
 	my.render= function PaMenu_render(props) {
-		var items= props.items.map(t => {return {
+		var items= props.items.map(t => {return typeof(t)=='object' ? t : {
 			cmp: Cmp.Menu.Item, 
 			onClick: ()=> props.onClick(t), 
 			txt: t.match(/(.png|.jpg)$/) ? h('img',{src: t}) : t,
+			fitted: true,
 		}});
 
 		var menu= {
+			... props,
 			cmp: Cmp.Menu, 
-			stackable: true, 
-			style: {marginBottom: '15px'}, 
+			style: {marginBottom: '15px', ... props.style}, 
 			children: [ {cmp: Cmp.Container,children: items} ],
 		};
 
@@ -524,7 +583,7 @@ function cmp_ContainerResponsive(my) {
 
 /************************************************************************** */
 //S: server and files cfg
-Server_url= location.href.match(/(https?:\/\/[^\/]+)/)[0]; //A: tomar protocolo, servidor y puerto de donde esta esta pagina
+Server_url= (location.href.match(/(https?:\/\/[^\/]+)/)||[])[0]; //A: tomar protocolo, servidor y puerto de donde esta esta pagina
 Api_url= Server_url+'/api'; //U: la base de la URL donde atiende el servidor
 
 var Auth_usr= ''; //U: que ingreso en el form login, se pueden usar ej. para acceder a server
@@ -629,6 +688,149 @@ function JSONtoHour(JSONdate) {
 	return [date.getHours(), date.getMinutes()].map(n => (n+'').padStart(2,"0")).join(":");
 }             
 
+/************************************************************************** */
+//S:
+function cmp_Markdown(my) {
+	my.render= function (props) {
+		var txt= asArray(props.children||'').join('\n\n');
+		var html= marked(txt).replace(/href="#CALL:([^"]*)"/, 'onclick="$1"');
+		delete(props.children);
+		delete(props.cmp);
+		return {cmp: 'Segment', dangerouslySetInnerHTML: { __html: html }, ... props}	
+	}	
+}
+
+function cmp_PaMenuYCerrar(my) {
+	my.render= function () {
+		return {
+			cmp: 'PaMenu', inverted: true, style: { background: C_TOOLBAR }, items: [
+			'img/logo.png', 
+			'PodemosAprender Semilla',
+			{cmp: 'Menu.Menu', position: 'right', children: {
+				cmp: 'Menu.Item', icon: 'close', style: {paddingRight: '16px'},
+				onClick: () => { if (location.hash=='#/') scr_AppReload(); else appGoTo('/'); }
+			}}
+		]}
+	}
+};
+
+function scr_AppReload(my) { 
+	window.location.replace(window.location.href.replace(/#.*/,''));
+}
+
+
+function link_whatsapp(data) {
+  //U: "https://api.whatsapp.com/send?phone=573105010573&text=*_Destacado_*%0A*texto"
+  return 'https://api.whatsapp.com/send?phone='+data.dst+'&text='+encodeURIComponent(data.body);
+}
+
+//============================================================
+//S: speech
+function speech_from_text_p(msg) { //A: lee en voz alta
+	//SEE: https://www.npmjs.com/package/cordova-plugin-texttospeech
+	if (typeof(msg)!='object') { msg= {text: (msg||'')+''} }
+	//A: msg es un kv
+	msg= Object.assign({lang: 'es-AR', rate: 0.75}, msg);
+
+	return new Promise( (onOk,onError) => 
+		TTS.speak({
+				text: msg.text,
+				locale: msg.lang,
+				rate: msg.rate,
+			}, 
+			onOk,	
+			onError,	
+		)
+	);
+}
+	
+//SEE: https://www.npmjs.com/package/phonegap-plugin-speech-recognition
+//SEE: https://wicg.github.io/speech-api/#speechreco-attributes
+SpeechRecognition= window.webkitSpeechRecognition || window.SpeechRecognition;
+Recognition_= SpeechRecognition && new SpeechRecognition();
+RecognitionEstaDictando_= false;
+
+function speech_to_text_stop() { Recognition_.stop(); }
+function speech_to_text_estaDictando() { return RecognitionEstaDictando_; }
+function speech_to_text_p(params) {
+	params= params || {};
+	Recognition_.lang= params.lang || 'es-AR'; //SEE: https://github.com/libyal/libfwnt/wiki/Language-Code-identifiers
+	return new Promise( onOk => {
+		var textoNuevo='';
+
+		function onRecognitionResult(event) {
+			console.log("Recognition",event);
+			//XXX:deberia ser un interim PERO la implementacion actual del plugin solo envia finales y no marca el flag isFinal :(
+			if (event.type=='end') {
+				RecognitionEstaDictando_= false;
+				setTimeout(() => onOk(textoNuevo), 500); //A: end llega antes que results :P
+			}
+			else if (event.type=='result') {
+				if (event.results.length > 0) {
+					textoNuevo= event.results[0][0].transcript;
+				}
+			}
+		}
+
+		Recognition_.onend= onRecognitionResult; //A: restaurar estado
+		Recognition_.onresult= onRecognitionResult;
+		RecognitionEstaDictando_= true;
+		setTimeout(()=> Recognition_.start(),100); //A: le doy tiempo al refresh de UI
+	});
+}
+
+//============================================================
+//S: media capture
+//SEE: https://cordova.apache.org/docs/en/latest/reference/cordova-plugin-media-capture/index.html
+
+function capture_media_p(opts) {
+	if (opts==null || typeof(opts)!='object') { opts= {type: opts||'Image'} }
+
+	return new Promise( (onOk, onError) => {
+		function captureSuccess(mediaFiles) {
+			console.log("capture_media_p ok",mediaFiles);
+			onOk(mediaFiles);
+		};
+
+		var captureError = function(error) {
+			console.error("capture_media_p err",error);	
+		};
+
+		var fun= 	navigator.device.capture['capture'+opts.type];
+		if (fun) { 
+			document.addEventListener('pendingcaptureresult', captureSuccess);
+    	document.addEventListener('pendingcaptureerror', captureError);
+			fun(captureSuccess, captureSuccess, {limit:1}); 
+		}
+		else { onError({error: 'unknown type '+opts.type+' valid are Audio, Image, Video'}) }
+	});
+}
+
+//============================================================
+//S: barcode
+
+Capture_barcode_Opts= { //DFLT
+	preferFrontCamera : false, // iOS and Android
+	showFlipCameraButton : true, // iOS and Android
+	showTorchButton : true, // iOS and Android
+	torchOn: false, // Android, launch with the torch switched on (if available)
+	saveHistory: true, // Android, save scan history (default false)
+	prompt : "Place a barcode inside the scan area", // Android
+	resultDisplayDuration: 500, // Android, display scanned text for X ms. 0 suppresses it entirely, default 1500
+	formats : "QR_CODE,PDF_417,EAN_13", // leyo DNI, qr wikipedia y codigo barras libro
+	orientation : "portrait", // Android only (portrait|landscape), default unset so it rotates with the device
+	disableAnimations : true, // iOS disable
+	SuccessBeep: false // iOS and Android
+}
+
+function capture_barcode_p(opts) {
+	//SEE: https://www.npmjs.com/package/cordova-plugin-qr-barcode-scanner
+	opts= opts || Capture_barcode_Opts;
+	return new Promise( (onBarCodeOk, onBarCodeError) =>
+		cordova.plugins.barcodeScanner.scan( onBarCodeOk, onBarCodeError, opts));
+}
+
+
 //========================================================
 //S: MAIN
 
@@ -636,17 +838,40 @@ set_style_dom('.test .duration { margin-left: 2em; }');
 
 for (k in PRecharts) { Cmp[k]= PRecharts[k]; }
 
+runtimeEnv= (typeof window != 'undefined') ? (window.location && window.location.href.indexOf('android_asset')>-1) ? 'cordova' : 'browser' : 'node'; //XXX:asegurarse que en node nunca existe 'window'
+
 m= location.href.match(/app=([^&#]+)/);
-if (m) { //A: habia un parametro 
-	main= m[1]+'.js';
-}
+if (runtimeEnv=='cordova') { main='file:///android_asset/www/cordova_main.js'; }
+else if (m) { main= m[1]+'.js'+'?_'+Date.now(); } //A: habia un parametro 
 else {
 	main= location.pathname.match(/[^\/]+$/)  ? location.pathname+'.js' : location.pathname+'index.js';
+	main+='?_'+Date.now();
 }
 
 console.log("MAIN",main);
 document.title= main.replace(/\.js.*/,'');
-loadJs(main+'?_'+Date.now()).then( x => {
-	console.log("AppStarted "+x);
-	AppStart();
-});
+
+function _init() {
+	platform_init(); //A: necesita funciones de cordova
+	loadJs(main).then( x => {
+		console.log("AppStarted "+x);
+		AppStart();
+	});
+}
+
+function onDocumentReady(fn) { //U: see if DOM is already available
+	if (document.readyState === "complete" || document.readyState === "interactive") { 
+		//U: ya cargo, call on next available tick
+		setTimeout(fn, 1);
+	} else {
+		document.addEventListener("DOMContentLoaded", fn);
+	}
+}    
+
+if (runtimeEnv=='cordova') {
+	document.addEventListener("deviceready", _init, false);
+}
+else {
+	onDocumentReady(_init);	
+
+}
