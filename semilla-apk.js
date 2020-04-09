@@ -82,7 +82,7 @@ function apksrvStatusPollStart(cb, wantsPersistent, wantsAfterApk, forceRestart)
 //------------------------------------------------------------
 function instrucciones_ui() {
 	return {cmp: 'Markdown', children: `
-#Instrucciones
+# Instrucciones
 
 Podés crear una aplicación android con sólo subir un archivo .zip 
 
@@ -181,6 +181,7 @@ function scr_semillaApk(my) {
 				my.state.wantsInstructions && instrucciones_ui(),
 			]},
 			{cmp: 'Container', children:
+				{cmp: 'h1', children: 'Tu aplicación ahora'},
 				{cmp: 'div', 'aria-live': 'assertive', children: [ //A: esta parte se actualiza sin interactuar con el usuario
 					my.state.error && {cmp: 'Message', negative: true, children: my.state.error},
 					apkStatus_ui(my.state.isUploading),
