@@ -181,7 +181,7 @@ function scr_semillaApk(my) {
 				my.state.wantsInstructions && instrucciones_ui(),
 			]},
 			{cmp: 'Container', children:
-				{cmp: 'div', 'aria-live': 'polite', children: [ //A: esta parte se actualiza sin interactuar con el usuario
+				{cmp: 'div', 'aria-live': 'assertive', children: [ //A: esta parte se actualiza sin interactuar con el usuario
 					my.state.error && {cmp: 'Message', negative: true, children: my.state.error},
 					apkStatus_ui(my.state.isUploading),
 				]}
