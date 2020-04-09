@@ -178,7 +178,7 @@ function scr_semillaApk(my) {
 			{cmp: 'Container', as: 'div', children: [
 				my.state.wantsInstructions && instrucciones_ui(),
 			]},
-			{cmp: 'Container', children: [
+			{cmp: 'Container', 'aria-live': 'polite', children: [
 				my.state.error && {cmp: 'Message', negative: true, children: my.state.error},
 				apkStatus_ui(my.state.isUploading),
 			]},
