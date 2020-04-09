@@ -175,7 +175,7 @@ function scr_semillaApk(my) {
 		return [
 			{cmp: 'PaMenuYCerrar'},	
 
-			{cmp: 'Container', as: 'div', children: [
+			{cmp: 'Container', 'aria-live': 'polite', as: 'div', children: [
 				my.state.wantsInstructions && instrucciones_ui(),
 			]},
 			{cmp: 'Container', 'aria-live': 'polite', children: [
