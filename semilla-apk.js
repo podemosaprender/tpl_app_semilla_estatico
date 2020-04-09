@@ -180,13 +180,13 @@ function scr_semillaApk(my) {
 			{cmp: 'Container', children: [
 				my.state.wantsInstructions && instrucciones_ui(),
 			]},
-			{cmp: 'Container', children:
+			{cmp: 'Container', children: [
 				{cmp: 'h1', children: 'Tu aplicación ahora'},
 				{cmp: 'div', 'aria-live': 'assertive', children: [ //A: esta parte se actualiza sin interactuar con el usuario
 					my.state.error && {cmp: 'Message', negative: true, children: my.state.error},
 					apkStatus_ui(my.state.isUploading),
 				]}
-			},
+			]},
 
 			{cmp: 'Container', style: 'padding: 10px', children: [
 					{cmp: 'Button', onClick: ()=> (my.file_cmp.click()), children: 'Subir nuevo .zip', floated: 'right'},	
