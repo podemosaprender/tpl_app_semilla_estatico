@@ -82,8 +82,6 @@ function apksrvStatusPollStart(cb, wantsPersistent, wantsAfterApk, forceRestart)
 //------------------------------------------------------------
 function instrucciones_ui() {
 	return {cmp: 'Markdown', children: `
-# Instrucciones
-
 Podés crear una aplicación android con sólo subir un archivo .zip 
 
 1. Editá en una carpeta de tu computadora los archivos javascript, html, css, imágenes, etc. que quieras mostrar en tu aplicación.  
@@ -91,6 +89,13 @@ Para que te sea más fácil la aplicación ya incluye todo lo que está en la [s
 2. Comprimí los archivos que modificaste o agregaste en un .zip
 3. Subilo con el botón que te ofrece está pagina.
 4. Un par de minutos después aparecerá un link para que bajes tu paquete instalador .apk
+
+Podés incluir un archivo app_cfg.json con
+
+* appName: por ej "MiApp"
+* appDsc: por ej. "Una aplicación maravillosa"
+* apkPkg: por ej. "com.minombre.miapps"
+* domainName: por ej. "minombre.com"
 `}
 }
 
@@ -196,15 +201,12 @@ function scr_semillaApk(my) {
 		return [
 			{cmp: 'PaMenuYCerrar'},	
 
-			{cmp: 'Container', children: [
+			{cmp: 'Container', 'aria-live': 'polite', as: 'div', children: [
 				my.state.wantsInstructions && instrucciones_ui(),
 			]},
-			{cmp: 'Container', children: [
-				{cmp: 'h1', children: 'Tu aplicación ahora'},
-				{cmp: 'div', 'aria-live': 'assertive', children: [ //A: esta parte se actualiza sin interactuar con el usuario
-					my.state.error && {cmp: 'Message', negative: true, children: my.state.error},
-					apkStatus_ui(my.state.isUploading),
-				]}
+			{cmp: 'Container', 'aria-live': 'polite', children: [
+				my.state.error && {cmp: 'Message', negative: true, children: my.state.error},
+				apkStatus_ui(my.state.isUploading),
 			]},
 
 			{cmp: 'Container', style: 'padding: 10px', children: [
