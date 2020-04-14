@@ -97,7 +97,7 @@ Podés incluir un archivo app_cfg.json con
   "appName": "MiApp",
   "appDsc": "Una aplicación maravillosa",
   "apkPkg": "com.minombre.miapps",
-  "domainName": "minombre.com",
+  "domainName": "minombre.com"
 }
 ~~~
 `}
