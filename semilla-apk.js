@@ -92,10 +92,14 @@ Para que te sea más fácil la aplicación ya incluye todo lo que está en la [s
 
 Podés incluir un archivo app_cfg.json con
 
-* appName: por ej "MiApp"
-* appDsc: por ej. "Una aplicación maravillosa"
-* apkPkg: por ej. "com.minombre.miapps"
-* domainName: por ej. "minombre.com"
+~~~
+{
+  "appName": "MiApp",
+  "appDsc": "Una aplicación maravillosa",
+  "apkPkg": "com.minombre.miapps",
+  "domainName": "minombre.com",
+}
+~~~
 `}
 }
 
