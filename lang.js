@@ -60,7 +60,7 @@ marked.setOptions({
 
 //------------------------------------------------------------
 
-loadJs_withTag_p('/node_modules/react-simple-code-editor/browser.js');
+loadJs_withTag_p('node_modules/react-simple-code-editor/browser.js');
 
 Slides= ("\n"+SlidesTexto).split(/\n+-------*/).slice(1);
 
