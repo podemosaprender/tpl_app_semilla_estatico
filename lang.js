@@ -27,7 +27,7 @@ SaveNames.forEach(n => {GLOBAL[n]= SaveDef[n]});
 await loadRtl_url('slides.rtl');
 
 //------------------------------------------------------------
-await loadJs('/node_modules/microlight/microlight.js');
+await loadJs('node_modules/microlight/microlight.js');
 
 function codeTryEval(e) {
 	var src= e.innerText;
