@@ -1,0 +1,1012 @@
+;#INFO: funciones y macros comunes del rtl
+(logm "DBG" 1 "prelude.rtl 0")
+;=====================================================================
+;S: basicos
+(GenEval (= gen_str (lambda (e) (return (ser_json e)))))
+(GenEval (= isQuoted (lambda (e) (return (&& (== (typeof e) "string") (. match e (js "/^\"(.*?)\"$/")))))))
+(GenEval (= gen_str_r (lambda (e) (return (?: (isQuoted e) (ser_json_r e) e)))))
+
+(GenMacro load_with_macros (p) (return `(GenEval (load ,p))))
+(GenMacro # (key &args) (return null)) ;U: metadatos arbitrarios, se ignoran salvo algunos keys
+(GenMacro IGNORE (&x) (return null))
+(GenMacro TEST (&x) (return null))
+(GenMacro EJEMPLO (&x) (return null))
+(GenMacro IDEA (&x) (return null))
+;(logGEN)
+
+(GenMacro scope (&statements) (return `(. call (function _nn_ () (block ,@statements)) this)))
+
+(GenMacro New (t &nargs) (return `(js "(new " ,t "(" ,(. join (. map nargs (fBind toSrcJs fArg_0)) ", ") "))"))) ;A: el fBind hace falta porque sino toSrcJs falla por el segundo arg que pasa map
+(GenMacro VarTop (name exp) (return `(= ,name ,(|| exp "null"))))
+
+(GenMacro paren (x) (return `(js "(" ,x ")")))
+(GenMacro seqExp (&args) (return (concat (array ",") args)))
+(GenMacro ! (exp) (return `(js "(!" ,exp ")")))
+(GenMacro repeat (n mivar body) (return `(js "for (" (var ,mivar 0) "; " (< ,mivar ,n) ";" ,mivar "++) {" ,body "}")))
+(GenMacro while (boolExp body) (return `(js "while (" ,boolExp ") {" ,body "}")))
+(GenMacro try (exp varName handler) (return `(js "try {" ,exp "}catch(" ,(|| varName "ex") "){" ,handler "}")))
+
+(GenMacro isNull (e) (return `(== ,e null)))
+(GenMacro isNotNull (e) (return `(!= ,e null)))
+(GenMacro isType (e t) (return `(== ,(gen_str t) (?: (== null ,e) "NULL" (typeof ,e)))))
+(GenMacro isNotType (e t) (return `(!= ,(gen_str t) (?: (== null ,e) "NULL" (typeof ,e)))))
+(GenMacro isNotObject (t) (return `(isNotType ,t object)))
+(GenMacro isObject (t) (return `(isType ,t object)))
+(GenMacro isFunction (t) (return `(isType ,t function)))
+(GenMacro isArray (t) (return `(Array.isArray ,t)))
+(GenMacro isKv (t) (return `(&& (isObject ,t) (! (isArray ,t)))))
+
+(GenMacro exists_kv (o k) (return `(. hasOwnProperty ,o ,k)))
+(GenMacro exists_array (o k) (return `(< -1 (. indexOf ,o ,k))))
+
+(GenMacro last_array (a) (return `(get ,a (- (get ,a "length") 1))))
+(GenMacro last (a) (return `(last_array ,a)))
+(GenMacro set_last_array (a v) (return `(set ,a (- (get ,a "length") 1) ,v)))
+(GenMacro concat_array (a1 a2) (return `(. concat (|| ,a1 (array)) (|| ,a2 (array)))))
+(GenMacro getOrSetDflt (o k dflt) (return `(paren (set ,o ,k (|| (get ,o ,k) ,dflt)))))
+
+(GenMacro blockExp (&body) (return `(. call (lambda () (block ,@body))))) ;U: un scope/expresion 
+(GenMacro map (arrayExp funExp) (return `(. map ,arrayExp ,funExp)))
+(GenMacro map_e (arrayExp varName blockExp) (return `(. map ,arrayExp (lambda (,varName) ,blockExp))))
+(GenMacro filter_e (arrayExp varName blockExp) (return `(. filter ,arrayExp (lambda (,varName) ,blockExp))))
+(GenMacro mapS_e (arrayExp varName blockExp) (return `(. map (|| ,arrayExp (array)) (lambda (,varName) ,blockExp))))
+
+(GenMacro fix_point_e (src varname exp) (block
+	(var x0 (+ varname "_after")) 
+	(return `(block (var ,varname null) (var ,x0 ,src)
+		(while (!= ,varname ,x0) (block (= ,varname ,x0) (= ,x0 ,exp)))))))
+
+(GenMacro FunExpSort (name cmpFun elementK valExp) (return ;U: arma una funcion para ordenar con dos explersiones
+	`(FunExp ,name (sortIdxA sortIdxB)
+		(return (,cmpFun (replace_exp ,valExp ,elementK sortIdxA) (replace_exp ,valExp ,elementK sortIdxB))))))
+
+(GenMacro cmp (str1 str2) (return `(. localeCompare (+ "" ,str1) ,str2)))
+
+(TEST 
+	(FunExpSort miSort - idx (get (get miObj (+ "k_" idx)) "xxx"))
+	(= x2 (FunExpSort miSort cmp idx (+ "k_" idx)))
+
+	(PJ ">" (x2 "hola" "chau"))
+	(PJ "<" (x2 "a" "chau"))
+	(PJ "=" (x2 "a" "a"))
+)
+
+(GenMacro ?:* (&condYexp) (return ;U: arma ?: anidados
+  (?: (< 1 (length condYexp))
+    `(?: ,(first condYexp) ,(second condYexp) (?:* ,@(slice condYexp 2)))
+    (|| (first condYexp) "null"))))
+
+(GenMacro if* (&condYexp) (return ;U: arma ?: anidados
+  (?: (< 1 (length condYexp))
+    `(if ,(first condYexp) ,(second condYexp) (if* ,@(slice condYexp 2)))
+    (|| (first condYexp) (gen_str "NOP")))))
+
+;TEST (print (?:* (== 1 0) "uno es 0" (== 2 0) "dos es cero" "ok"))
+;TEST (print (?:* (== 1 0) "uno es 0" (== 2 0) "dos es cero"))
+;TEST (if* (== 1 0) (print "uno es 0") (== 2 0) (print "dos es cero") (print "ok2"))
+;TEST (if* (== 1 0) (print "uno es 0") (== 2 0) (print "dos es cero"))
+
+(GenMacro replace_exp (src k v) (return ;U: reemplazar una expresion en otra COMO MACRO
+	(?: (isArray src) (concat (array (?: (== (first src) k) v (first src))) (map_e (rest src) e (return `(replace_exp ,e ,k ,v)))) ;XXX:RTL:el evaluador en liblang no acepta un array en la primera posicion
+		(?: (== src k) v src))))
+
+(TEST
+(replace_exp "hola" "hola" "chau")
+(replace_exp (print "hola") "hola" "chau")
+(replace_exp (print "hola") print PJ)
+(replace_exp (if true (print "hola")) print PJ)
+)
+
+(GenMacro Const (name val) (return `(= ,name ,(|| val `(kv ,name 1))))) ;U: declara una const global, si no hay valor se asegura que sea unica para "=="
+(GenMacro CfgConst (name val) (return `(= ,name ,val)))
+(GenMacro ConstLocal (name val) (return `(var ,name ,(|| val `(kv ,name 1))))) ;U: declara una const global, si no hay valor se asegura que sea unica para "=="
+
+(GenMacro re (expr modif) (block (print (+ "//XXXRE" expr)) (var exprn (ser_json (. replace (. replace expr /\//g "\\/") /\\/g "\\"))) (print (+ "//XXXRER" exprn)) (return `(js "/" ,exprn "/" ,modif))))
+;(if 0 (block ; TEST re
+;	(re "regexConBarra a/b c")
+;	(re "regexConComilla \"pepe\"")
+;	(re "regexConScape \( asi")
+;	(var regexConExpr) (re regexConExpr))) ;U: no acepta expresiones, solo literales
+
+
+
+(= Re_last_match null)
+(GenMacro join_str (l sep) (return `(. join ,l (+ "" ,sep))))
+(GenMacro match_str_re (str re) (return `(paren (= Re_last_match (. match (+ "" ,str) ,re)))))
+(GenMacro match_str_re_v (str re idx) (return `(&& (match_str_re ,str ,re) (get (|| Re_last_match (array)) ,(|| idx 1))))) ;U: matchea Y devuelve el primero o idx-esimo match
+(GenMacro match_str (str re modif) (return `(. match (+ "" ,str) (re ,re ,modif))))
+(GenMacro replace_str_fn (str re modif fn) (return `(. replace (+ "" ,str) (re ,re ,modif) ,fn)))
+(GenMacro replace_str_re_fn (str re fn) (return `(. replace (+ "" ,str) ,re ,fn)))
+(GenMacro replace_str_str (str patt fn) (return `(. replace (+ "" ,str) ,patt ,fn)))
+(GenMacro split_re (strExp expr modif) (return `(. split (+ "" ,strExp) (re ,expr ,modif))))
+(GenMacro split_str_re (strExp re) (return `(. split (+ "" ,strExp) ,re )))
+(GenMacro split_str (strExp re) (return `(. split (+ "" ,strExp) ,re )))
+(GenMacro match_re (strExp expr modif) (return `(. match (+ "" ,strExp) (re ,expr ,modif))))
+
+(GenMacro get_init (kv k dflt) (return `(set ,kv ,k (|| (get ,kv ,k) ,dflt)))) ;XXX:ver getOrSetDflt
+(GenMacro dflt (vn exp) (return `(|| ,vn ,exp)))
+(GenMacro set_dflt (vn exp) (return `(= ,vn (dflt ,vn ,exp))))
+
+
+;(if 0 (block ; TEST split_re
+;	(var miStrExp)
+;	(split_re miStrExp "barra=/*")))
+;=====================================================================
+;S: construir funciones
+(GenMacro mkFLog (text) (return `(lambda () (logm "DBG" 1 ,text (Array.prototype.slice.call arguments 0)))))
+
+(GenEval (block
+	(= LogWrap (lambda (name args body) (block
+		;(logm "DBG" 1 "XXXARGS" args)
+		
+		(var largs `(kv))
+		(var restArg)
+		(var restArgExp)
+		(if (&& (length args) (== "&" (get (last_array args) 0))) (block
+			(= restArg (. substring (last_array args) 1))
+			(= (last_array args) restArg)
+			(= restArgExp `(= ,restArg (fArgsCopy arguments ,(- (length args) 1))))))
+		(. map args (lambda (e) (block (repeat 2 i (. push largs e)))))
+		(var largsr (. concat largs `(result LogWrap_rr)))
+		(var loglexp `(|| (&& GLOBAL.DbgCtl (get GLOBAL.DbgCtl ,(gen_str name))) 9))
+		(return `(block 
+			,restArgExp
+			(var LogWrap_name ,(gen_str name))
+			(var LogWrap_logl ,loglexp)
+			(var logme (function ,(+ name "_logmv") (m more l t) (logm (|| t "DBG") (|| l LogWrap_logl) (+ "FN " LogWrap_name " " m) (kv logme more ,@(. slice largs 1)))))
+			(logm "DBG" LogWrap_logl ,(+ "\"FN " name "\"") ,largs) 
+			(var _t0) (var _t1) ;A: dos temporales
+			(var LogWrap_ff (function ,(+ name "_logWrapped") () ,body))
+			(js "try {"
+			(var LogWrap_rr (. apply LogWrap_ff this (array))) ;A: le paso el mismo this que recibi
+			"}catch(wrapEx)" (block (logmex "ERR" 1 ,(+ "\"FN " name "\"") ,largs wrapEx) (throw wrapEx)))
+			(logm "DBG" LogWrap_logl ,(+ "\"FN " name " R\"") ,largsr)
+			(return LogWrap_rr))))))))
+
+(GenEval
+	(= genFun (function genFun (name args body) (block ;U: agrega una funcion SOLO al rtl
+	(var logp (kv name name args args body body))
+	(var r `(= ,name (function ,name ,args ,(LogWrap name args body))))
+	(logm "DBG" LangLogLvl "RTL GenFun MACROS" (. keys Object GLOBAL.GEN));
+	(var js (toSrcJs r null GLOBAL.GEN))
+	(try (MiEval js) ex (block 
+		(logmex "ERR" 1 "GenFun" (kv name name args args body body) ex)
+		(PJ js)) )
+	(return js)
+	))))
+
+(GenMacro GenFun (n xargs body) (return (genFun n xargs body))) ;U: define una funcion SOLO para el generador
+
+(GenMacro FunTop (name args &body) (return `(= ,name (function ,name ,args ,(LogWrap name args (?: (== 1 (length body)) (first body) (unshift body "block"))))))) ;U: una funcion publica
+
+(GenMacro FunTopLib (name xargs body) (block ;U: en el programa Y las macros
+	(genFun name (. concat (array) xargs) body) ;A: llamo como FUNCION, no uso la macro
+	(return `(FunTop ,name ,xargs ,body))))
+
+(GenMacro FunVar (name args body) (return `(var ,name (function ,name ,args ,(LogWrap name args body))))) ;U: una funcion en un var
+(GenMacro FunExp (name args body) (return `(function ,name ,args ,(LogWrap name args body)))) ;U: una funcion como expresion
+(GenMacro F (k body) (return `(FunExp ,k () ,body))) ;U: para una funcion minima
+(GenMacro FA (k body) (return `(FunExp ,k (a0 a1 a2 a3 a4 a5 a6 a7 a8 a9) ,body))) ;U: para una funcion minima
+
+(GenMacro FunTopA1 (name args body) (return `(= ,name (function ,name ,args (block
+  (var FunTopA1cbOri ,(last_array args))
+	(= ,(last_array args) (fLog (|| FunTopA1cbOri nullf) (|| (&& GLOBAL.DbgCtl (get GLOBAL.DbgCtl ,(gen_str name))) 9) ,(+ "\"FN " name " call CB\"")))
+	,(LogWrap name args body))))))
+
+(GenMacro FunExpA1 (name args body) (return `(function ,name ,args (block
+  (var FunA1cbOri ,(last_array args))
+	(= ,(last_array args) (fLog (|| FunA1cbOri nullf) (|| (&& GLOBAL.DbgCtl (get GLOBAL.DbgCtl ,(gen_str name))) 9) ,(+ "\"FN " name " call CB\"")))
+	,(LogWrap name args body)))))
+
+(GenMacro FunMap (name args body) (return `(FunTop ,name ,args ,body)))
+(GenMacro def_method (obj_name method_name args_name_v body) (return 
+	`(setk ,obj_name ,method_name (FunExp ,(+ obj_name "_" method_name) ,args_name_v ,body))))
+
+;U: para el servidor web
+(GenMacro FunSrv (fn args &body) (return `(block 
+	(ensure_var "SrvFunc" (kv))
+	(meta ,(gen_str fn) "tipo" "*" "cmd")
+	(meta ,(gen_str fn) "ambiente" "*") 
+	(FunTop ,fn ,args ,@body) ;XXX:generalizar
+	(setk SrvFunc ,fn ,fn)) ))
+
+
+(GenMacro FunGet (name k) (return `(FunTop ,name (obj) (return (get obj ,k))))) ;U: una funcion que devuelve una parte del parametro
+(GenMacro FunGetSet (name k) (return `(block (FunGet ,(+ name "Get") ,k) (FunTop ,(+ name "Set") (obj v) (return (set obj ,k v)))))) ;U: una funcion que devuelve una parte del parametro
+(GenMacro FunRec (name parts) (return `(block ,@(. map (fArgsCopy arguments 1) (lambda (p i) (return `(FunGet ,(+ name p) ,i))))))) ;U: los accesors para un record hecho con un array
+(if 0 ; TEST
+	(FunRec type Ast Xxx Zzz))
+
+(GenMacro fold_e (arrayExp varName blockExp acc cmp) (return `(fold ,arrayExp (FunExp ,(+ "cada_" varName) (,varName ,(+ varName "_k") ,(+ varName "_acc") ,(+ varName "_stop") ,(+ varName "_col")) ,blockExp) ,(|| acc "null") ,(|| cmp "null"))))
+
+(GenMacro set* (dstVar &ksAndVs) (return (push (fold_e ksAndVs e (return (?: (% e_k 2) (push e_acc `(set ,dstVar ,(get ksAndVs (- e_k 1)) ,e)) e_acc)) (array ",")) dstVar)))
+
+(TEST
+	(= o (kv "ori" "si"))
+	(= x (set* o "k1" "v1" "k2" "v2"))
+	(PJ x)
+)
+
+(GenFun gen_scalar (x) (return (?: (. match (+ "" x) (js "/^\d+$/")) x (gen_str x)))) ;U: si es num lo deja como esta, sino lo envuelve en ""
+
+;------------------------------------------------------------------
+(Const TAB (js "\"\t\""))
+(Const EOL (js "\"\n\""))
+(Const EOL_RE (js "/\s*[\r\n]+/g"))
+(Const SPACE0_RE (js "/\s*/g"))
+(Const SPACE1_RE (js "/\s+/g"))
+
+(FunTopLib isObject (x) (return (&& (== "object" (typeof x)) x)))
+(FunTopLib isString (x) (return (== "string" (typeof x))))
+(FunTopLib isArray (t) (return (Array.isArray t)))
+(FunTopLib isKv (t) (return (&& (isObject t) (! (isArray t)))))
+(FunTopLib isStream (x) (return (&& (isObject x) (startsWith x.TIPO "STREAM_"))))
+(FunTopLib length_str (x) (return (?: (isNull x) 0 (get (+ "" x) "length"))))
+(FunTopLib lengthS (x) (return (&& (== "object" (typeof x)) x (get x "length"))))
+(FunTopLib push (a &em) (block (. apply a.push a em) (return a)))
+(FunTopLib push_v (a em) (block (. apply a.push a em) (return a)))
+(FunTopLib pushk (a e) (return (- (. push a e) 1)))
+(FunTopLib pop (a) (return (. pop a)))
+(FunTopLib shift (a) (return (. shift a)))
+;(FunTopLib unshift (a v) (return (. unshift a v)))
+(FunTopLib unshift (a v) (block (. unshift a v) (return a)))
+(FunTopLib first (a) (return (&& a (get a 0))))
+(FunTopLib second (a) (return (&& a (get a 1))))
+(FunTopLib third (a) (return (&& a (get a 2))))
+(FunTopLib fourth (a) (return (&& a (get a 3))))
+(FunTopLib fifth (a) (return (&& a (get a 4))))
+(FunTopLib rest (a) (return (&& a (. slice a 1))))
+(FunTopLib slice (a from to) (return (&& a (. slice a from (?: (|| (isNull to) (<= 0 to)) to (- (length a) to 1))))))
+(FunTopLib sort (a fn) (return (&& a (. sort a fn))))
+(GenMacro hasKey_kv (kv k) (return `(Object.prototype.hasOwnProperty.call ,kv ,k)))
+(GenMacro exists_key_kv (kv k) (return `(Object.prototype.hasOwnProperty.call ,kv ,k)))
+(FunTopLib kv_v (v) (return (fold_e v kv_v_e (block (if (% kv_v_e_k 2) (set kv_v_e_acc (get v (- kv_v_e_k 1)) kv_v_e)) (return kv_v_e_acc)) (kv)))) 
+(FunTopLib get_v (o k_v) (return (map_e k_v i (return (get o i)))))
+
+
+(FunTopLib caseToUpper (s) (return (. toUpperCase s)))
+(FunTopLib caseToLower (s) (return (. toLowerCase s)))
+(FunTopLib startsWith (s pfx) (return (== (. substr (+ "" s) 0 (length pfx)) pfx)))
+(FunTopLib endsWith (s sfx) (return (== (. substr (+ "" s) (- (lengthS s) (length sfx))) sfx)))
+
+(TEST
+(PJ (endsWith "pewpwe[0" "[0"))
+(PJ (endsWith "pewpwe[0" "a[0"))
+)
+
+(GenMacro case (expn &vYexp) (return `(if* ,@(fold vYexp (FunExp case_cada (v i acc) (block
+	(var esPar (% i 2))
+	(var esUltimo (== i (- (length vYexp) 1)))
+	(var qq (?: esPar (get vYexp (- i 1)) "_dflt_"))
+	(return (?: (|| esPar esUltimo) (push (?: esPar (push acc `(== ,expn ,qq)) acc) `(block (logme "CASE" ,(gen_str qq)) ,v)) acc)))) (array)))))
+
+(GenMacro caseX (expn &vYexp) (return `(?:* ,@(fold vYexp (FunExp case_cada (v i acc)
+	(return (push acc (?: (|| (% i 2) (== i (- (length vYexp) 1))) v `(== ,expn ,v))))) (array)))))
+
+
+(FunTopLib kvVar (a dflt) (block
+		(var r (array))
+		(var hasK false)
+		(. map a (lambda (e) (block
+			(if hasK 
+				(block (= hasK false) (push r e))
+				(block 
+					(var ll (- (length e) 1))
+					(if (== ":" (get e ll)) 
+						(block (= hasK true) (push r (. substr e 0 ll))) 
+						(block (push r e) (|| dflt (push r e)))))))))
+		(return r)))
+			
+(GenMacro logmv (t l m &kvs) (return `(logm ,(?: (== t "D") (gen_str "DBG") (?: (== t "I") (gen_str "NFO") (?: (== t "E") (gen_str "ERR") t))) ,l ,m (kv ,@(kvVar kvs)))))
+
+(GenMacro logmexv (t l m &kvs) (block (var ex (pop kvs)) (return `(logmex ,(?: (== t "D") (gen_str "DBG") (?: (== t "I") (gen_str "NFO") (?: (== t "E") (gen_str "ERR") t))) ,l ,m (kv ,@(kvVar kvs)) ,ex))))
+
+(GenMacro logmev (m &kvs) (return `(logme ,m (kv ,@(kvVar kvs)))))
+
+(GenMacro log1 (exp lvl msg) (return `(seqExp (= _t0 ,exp) (logmv D ,(|| lvl 1) ,(|| msg (gen_str (ser_term exp))) v: _t0) _t0)))
+
+(GenMacro kv_var (&kvs) (return `(kv ,@(kvVar kvs))))
+
+;U: aliviar el sufrimiento con async, ver ex/s_uso_letAsync.rtl
+(GenMacro let1_a (name exp body) (return `(,@exp (FunExp ,(+ "con_" name) (,name) ,body))))
+(GenMacro letX (&pairsAndBody) (return (?: (== 1 (length pairsAndBody)) (first pairsAndBody)
+	(?: (&& (isArray (get pairsAndBody 1)) (match_str_re (first (get pairsAndBody 1)) (js "/_a$/")))
+		`(let1_a ,@(. slice pairsAndBody 0 2) (letX ,@(. slice pairsAndBody 2)))
+		`(block (var ,@(. slice pairsAndBody 0 2)) (letX ,@(. slice pairsAndBody 2)))))))
+
+
+;------------------------------------------------------------------
+(= array Array)
+(GenMacro CallCb (cb &args) (return `(?: (isFunction ,cb) (. call ,cb this ,@args) (seqExp (logm "DBG" 9 "CB IS NOT A FUNCTION, NOT CALLING" ,(gen_str cb)) null))))
+(GenMacro ApplyCb (cb args) (return `(?: (isFunction ,cb) (. apply ,cb this ,args) (seqExp (logm "DBG" 9 "CB IS NOT A FUNCTION, NOT CALLING" ,(gen_str cb)) null))))
+(GenMacro ApplyCb_str (cbName args) (return `(?: (isFunction (get GLOBAL ,cbName)) (. apply (get GLOBAL ,cbName) null ,args) (seqExp (logm "DBG" 9 "CB IS NOT A FUNCTION, NOT CALLING" ,cbName) null))))
+(GenMacro ApplyCb_str_v (nameYargs) (return `(ApplyCb_str (first ,nameYargs) (rest ,nameYargs))))
+(GenMacro CallCb_str (cbName &args) (return `(?: (isFunction (get GLOBAL ,cbName)) (. apply (get GLOBAL ,cbName) null (array ,@args)) (seqExp (logm "DBG" 9 "CB IS NOT A FUNCTION, NOT CALLING" ,cbName) null))))
+
+(FunTopLib callNameOrVal (cb &args) (return (?:* 
+	(isFunction cb) (. apply cb this args)
+	(isFunction (= _t0 (get GLOBAL cb))) (. apply _t0 this args)
+	cb)))
+
+;=====================================================================
+;S: funciones comodas
+(ensure_var "DbgCtl" (kv))
+(ensure_var "evalm" eval) ;A: NO PISAR la de librt.web, etc
+(= nullf_a1 (function nullf_a1 () (block (logm "DBG" 1 "nullf_a1" arguments) (var cb (last_array arguments)) (cb))))
+
+(= fLogParams cbMostrarResultado)
+
+(FunTop fLogLvl (f lx m) (block
+	(var l (|| lx 9))
+	(return 
+	(FunExp fLogLvl_impl (&args) (block
+		(var l0 (set_logLvlMax l))
+		(try (var rFLogLvl (. apply f null args)) ex (block (logmex "DBG" l (|| m "FN") args ex) (set_logLvlMax l0) (throw ex)))
+		(set_logLvlMax l0)
+		(return rFLogLvl))))))
+(FunTop id1 (a) (return a))
+(GenMacro FunTopId1 (name) (return `(FunTop ,name (v) (return v))))
+
+(GenMacro qw (&args) (return `(array ,@(. map args gen_str))))
+(GenMacro isOneOf (exp list) (return `(< -1 (. indexOf ,list ,exp))))
+
+(FunTop eval_rtl_v (exp xfrmEnv) (block
+	(var eval_rtl_v_IGNORE)
+	(if (isOneOf (first exp) (qw kv get getk)) (= exp `(= eval_rtl_v_IGNORE ,exp)))
+	(var src_js (toSrcJs exp))
+	(try (return (MiEval src_js)) ex (block (logmex "ERR" 1 "eval_rtl_v" (kv js src_js exp exp) ex) (throw ex)))))
+
+
+
+(GenMacro call_parallel (args &fn) (return `(block ,@(map_e fn f (return `(,f ,@args))))))
+(GenMacro apply_parallel (arg &fn) (return `(block ,@(map_e fn f (return `(. apply ,f null ,arg))))))
+
+
+(FunTop dispatch_v (fnYargs_v) (block 
+	(var fn (get GLOBAL (first fnYargs_v)))
+	(return (. apply fn null (rest fnYargs_v)))))
+
+(FunTop dispatch (&fnYargs) (dispatch_v fnYargs))
+
+(FunTop dispatch_v_v (efectos) (fold efectos dispatch_v))
+
+(TEST lengthS
+			 (var xa (array "hola"))
+			 (PJ "xxx" (lengthS xa))
+			 (PJ "uno" (lengthS null))
+			 (PJ "dos" (lengthS xa) xa))
+
+(FunTop exists_array_fn (list fn) (return (&& list (length (. filter list fn))))) ;U:fn devuelve true par algun elemento de list
+
+(FunTop toAppR_array (a fn acc i) (return ;U: (a1 a2 a3 a4) -> (a1 (a2 (a3 a4))) 
+	(?: (< i 0) acc
+		(toAppR_array a  fn
+			(. apply (|| fn Array) null (?: (isNull i) (. slice a (- (length a) 2)) (array (get a i) acc)))
+			(?: (isNull i) (- (length a) 2 1) (- i 1))))))
+
+(FunTop toAppL_array (a fn acc i) (block ;U: (b1 b2 b3 b4) -> (((b1 b2) b3) b4) como usa type_hm_for
+	(FunVar rec (ee) (return (?: (Array.isArray ee) (toAppL_array ee) ee)))
+	(return (?: (== i (length a)) acc
+		(toAppL_array a fn
+			(. apply (|| fn Array) null 
+				(?: (isNull i) (map_e (. slice a 0 2) a1 (return (rec a1))) (array acc (rec (get a i))))) 
+			(?: (isNull i) 2 (+ i 1)))))))
+
+;------------------------------------------------------------------
+;//U: un stream que recorre una estructura de datos
+(Const VISIT_CHILDREN)
+(Const VISIT_CHILDS VISIT_CHILDREN) ;DEPRECATED
+(Const VISIT_ELEMENT)
+(Const VISIT_SKIP)
+(Const VISIT_STOP)
+(Const VISIT_UP) ;U: abandonar esta rama
+(Const VISITING_BEFORE)
+(Const VISITING_AFTER)
+
+(Const StreamVisitPrototype (. create Object StreamPrototype))
+(Const StreamVisitPrototype.next (FunExp stream_visit_next () (block
+	(var st (first this.stack))
+	(if st ;A: tengo un stream
+		(block
+			(var eOri (. next st))
+			(var act)
+			(var epx)
+			(if (== eOri STREAM_END) 
+				(= act VISIT_UP)
+				(block
+					(var px (+ (join_str this.path "") (second eOri)))
+					(var epx (array (first eOri) px VISITING_BEFORE))
+					(var actDflt (?: (isObject (first eOri)) VISIT_CHILDREN VISIT_ELEMENT)) 
+					(var actX (|| (?: this.control (CallCb this.control epx actDflt this.controlSts) null) actDflt))
+					(if (isArray actX) 
+						(block (= act (first actX)) (= epx (second actX))) 
+						(block (= act actX) (= epx (array (first eOri) px)))))) ;A: control puede devolver un elemento (ej. modificarlo en un para TopDown traversal)
+			(logmev "ACT" act e actX actDflt)
+			(case act
+				VISIT_UP
+				(block 
+					(. shift this.stack)
+					(var e 
+					(. shift this.stack_e))
+					(. pop this.path)
+					(= act VISIT_SKIP) ;DFLT
+					(if (isNotNull e) (block
+						(var px (second e)) ;A: ya tengo el path ok
+						(var epx (array (first e) px VISITING_AFTER))
+						(var actDflt VISIT_ELEMENT) 
+						(var actX (|| (?: this.control (CallCb this.control epx actDflt this.controlSts) null) actDflt))
+						(if (isArray actX) (block (= act (first actX)) (= e (second actX))) (= act actX))))
+					(return (?: (== act VISIT_ELEMENT) e (. next this))))
+
+				VISIT_CHILDREN
+				(block
+					(. unshift this.stack_e epx) ;A: el elemento que visito
+					(. unshift this.stack (ensure_stream (first epx) true))
+					(push this.path (+ (second eOri) (?: (isArray (first epx)) "[" "{")))
+					(return (?: this.wantsTermBefore epx (. next this))))
+
+				VISIT_ELEMENT
+				(return epx)
+
+				VISIT_STOP
+				(return STREAM_END)
+
+				VISIT_SKIP
+				(return (. next this)) ));//XXX:TCO con while?
+
+		(return STREAM_END))))) 
+
+
+(Const StreamVisitPrototype.reset (FunExp stream_visit_reset () (block
+	(if (! this.isFirstRun) (. reset this.data_))
+	(= this.isFirstRun false)
+	(= this.stack (array))
+	(= this.stack_e (array))
+	(= this.path (array))
+	(= this.controlSts (kv))
+	(. unshift this.stack (ensure_stream (array this.data_) true))
+	(. push this.path (?: this.dataIsArray_ "[" "{")))))
+
+(Const StreamVisitPrototype.TIPO "STREAM_VISIT")
+
+(FunTop nuevo_stream_visit (data wantsTermBefore control) (block
+	(var me (. create Object StreamVisitPrototype  (kv 
+		data_ (kv value data) 
+		dataIsArray_ (kv value (|| (isArray data) (&& (isObject data) (== (get data "TIPO") "STREAM_ARRAY"))))
+		wantsTermBefore (kv value wantsTermBefore)
+		control (kv value control)
+		controlSts (kv writable true)
+		stack (kv writable true)
+		stack_e (kv writable true) ;U: un stack para elementos
+		path (kv writable true)
+		isFirstRun (kv value true writable true))))
+	(. reset me)
+	(return me)))
+
+;------------------------------------------------------------------
+(FunTop connect_stream (val cb obj) (if (!= val STREAM_SKIP) (. call cb obj val)))
+(FunTop connect_stream_apply (val cb obj) (if (!= val STREAM_SKIP) (. apply cb obj val)))
+
+;------------------------------------------------------------------
+(FunTop uniquePairs_stream (eList sts) (block ;U: filtro para streamMap que devuelve cada par una sola vez
+	(var yaVi (getOrSetDflt sts "uniquePairs_stream" (kv)))
+	(var e1 (get eList 0)) (var e2 (get eList 1))
+	(var k (?: (< e1 e2) (+ e1 "\t" e2) (+ e2 "\t" e1)))
+	(return (?: (|| (== e1 e2) (get yaVi k)) 
+		STREAM_SKIP
+		(seqExp (set yaVi k 1) eList) ))))
+	
+(GenMacro fold_nested (&objExpAndNamesWithFnAtTheEnd) (return ;U: arma folds anidados, XXX:convertir a streams
+	(?: (< 1 (length objExpAndNamesWithFnAtTheEnd))
+		`(fold ,(first objExpAndNamesWithFnAtTheEnd) (FunExp ,(+ "cada_" (second objExpAndNamesWithFnAtTheEnd)) (,(second objExpAndNamesWithFnAtTheEnd) ,(+ (second objExpAndNamesWithFnAtTheEnd) "_k")) (fold_nested ,@(slice objExpAndNamesWithFnAtTheEnd 2))))
+		(first objExpAndNamesWithFnAtTheEnd))))
+
+;TEST (fold_nested Defs edef edef.parts pdef AtributosDerivados f (PJ edef_k pdef_k f_k f.name))
+
+;============================================================
+;S: compat
+(ensure_var "ARGV" (array)) ;U: ej. para web
+(FunTop gen_str (e) (return (ser_json e))) ;XXX:copiado de arriba porque la necesito cuando NO evaluo en rtl
+;============================================================
+;S: funciones con "metadata"
+;XXX: serian funciones tambien en js o "bloques" ej. que suman sus parametros a la que las envuelve?
+
+;============================================================
+(GenFun commentf (args pfx before after) (block
+	(set_dflt pfx " ") 
+	(set_dflt before "/*") 
+	(set_dflt after "*/") 
+	(return `(js ,(gen_str (+ before " " 
+		(join_str (map_e args a (return 
+			(?: (isObject a) 
+				(ser_json a 1) 
+				(replace_str_str (gen_str_r a) "\n" (js "\"\n\""))))) 
+		" ") " " after)))))) ;XXX:necesito una funcion porque GenMacro convierte en js entonces no puedo pasar objetos como param
+(GenMacro comment (&strargs) (return (commentf strargs "" "/*" "*/")))
+(GenMacro doc (&strargs) (return (commentf strargs "" (+ EOL "/**" EOL ) (+ EOL "*/" EOL))))
+
+;============================================================
+
+(GenMacro getk (dst k) ;U: como get pero k se interpreta como string
+	(return `(get ,dst ,(gen_scalar k))))
+(GenMacro setk (dst k v) ;U: como set pero k se interpreta como string
+	(return `(set ,dst ,(gen_scalar k) ,v)))
+
+(FunTopLib xfrm_setp (args quiereQ) (block
+	(var sepKv (?: quiereQ "\"{\"" "{"))
+	(var sepAr (?: quiereQ "\"[\"" "["))
+	(var hasSep false)
+	(return (fold_e args a (block 
+		(case (first a)
+			"{" (block (push a_acc sepKv) (if (&& (!= a "{\"\"") (< 1 (length a))) (push a_acc (rest a)) (= hasSep true)))
+			"[" (block (push a_acc sepAr) (if (&& (!= a "[\"\"") (< 1 (length a))) (push a_acc (rest a)) (= hasSep true)))
+			 		(block (if (! hasSep) (push a_acc sepKv)) (push a_acc a) (= hasSep false)))
+		(return a_acc)) (array)))))
+					
+(GenMacro getpv (dst &args) (return `(get_p ,dst (array ,@(xfrm_setp (map_e args a (return (?: (isString a) (replace_str_str a (js "/^\"([\[{])/") "$1\"") a))) true)))))
+(GenMacro setpv (dst &args) (block (var v (pop args)) (return `(set_p ,dst (array ,@(xfrm_setp (map_e args a (return (?: (isString a) (replace_str_str a (js "/^\"([[{])/") "$1\"") a))) true)) ,v))))
+
+(GenMacro getpk (dst &args) (return `(getpv ,dst ,@(map args gen_str))))
+(GenMacro setpk (dst &args) (block (var v (pop args)) (return `(setpv ,dst ,@(map args gen_str) ,v))))
+
+(FunTopLib callOrVal (vOf &args) (return (?: (isFunction vOf) (ApplyCb vOf args) vOf))) ;U: si recibio una funcion, la llama, sino devuelve el valor
+
+(FunTopLib init_keys_kv (keys_v dfltOf wantsNoEval dst) (block ;U: devuelve un kv con cada key con el valor dftl
+	(set_dflt dst (kv))
+	(fold_e keys_v k (set dst k (|| (?: wantsNoEval dfltOf (callOrVal dfltOf k)) null)))
+	(return dst)))
+
+;------------------------------------------------------------------
+;S: files
+(FunTopLib set_file_o (fpath data wantsIndent) 
+	(set_file fpath (ser_planoOjson data wantsIndent)))
+
+(FunTopLib get_file_o (fpath) 
+	(return (ser_planoOjson_r (get_file fpath)))) 
+
+;------------------------------------------------------------
+(FunTop logme (m v) (logm "DBG" 1 m v))
+(GenMacro allButLast (v) (return `(slice ,v 0 (- (length ,v) 1))))
+(GenMacro var_v (&varsYv) (return `(block ,@(fold_e (allButLast varsYv) name (return (push name_acc `(var ,(?: (startsWith name "&") (rest name) name)  (,(?: (startsWith name "&") "slice" "get") ,(last varsYv) ,name_k)))) (array)))))
+
+(TEST
+(PJ (allButLast `(a b c d)))
+(var_v term path cuando ee)
+)
+
+(FunTopLib throwf (ex) (throw ex))
+(FunTopLib getOrDflt (o k dflt) (return (?: (isType o object) (get o k) dflt)))
+(GenMacro .2 (msg tgt &args) (return `(?:* 
+	(getk ,tgt ,msg) (. ,msg ,tgt ,@args) 
+	(getk ,tgt _procesar_msj) (. _procesar_msj ,tgt ,(gen_str msg) (array ,@args) ,tgt)
+	(throwf (kv message (+ "No entiende " ,(gen_str msg)) msj ,(gen_str msg) args (array ,@args)))
+)))
+
+(FunTopLib values_kv (o) (return 
+	(?: (exists_kv Object "values") (. values Object o)
+		(fold_e o v (return (push v_acc v)) (array)))))
+
+;============================================================
+;S: flujos
+;NOTAR: al final necesito una lista (k1 (fnX k_p k_q ...) k2 (fnY ...) *)
+(GenEval (ensureInit "FlujoDefs" (kv))) ;A: para guardar las definciones
+
+;U: un sistema de EXTENSION para evaluacion especian en los flujos, uso (seq: uno dos tres), declaro flujo_ext_seq_eval_a
+;XXX: puedo agregar "hooks" tambien para detectar dependencias y controlar que se genera
+(FunTop flujo_ext_seq_eval_a (flujo sts cb &steps) (block (pop steps) ;A: el ultimo era CB
+	;U: para que NO se ejecute el paso de la izq antes que el de la derecha
+	(take_stream_a (. reverse steps) null (fBind flujo_a flujo fArg_0 sts fArg_1) 
+		(FunExp flujo_seq_end () (block
+			(var rStep (last steps)) ;A: reverse MODIFICA steps
+			(var r (get sts rStep))
+			(logmv D 1 "flujo_ext_seq_eval_a CB" rStep steps r)
+			(cb r))))
+))
+
+(FunTop flujo_ext_if_eval_a (flujo sts cb cond_step ifTrue_step ifFalse_step) (block ;A: el ultimo era cb
+	;U: se ejecuta la condicion, y segun eso solo se pide la true o la false
+	(flujo_a flujo cond_step sts (FunExp flujo_ext_if_onCond_a (val)
+		(flujo_a flujo (?: val ifTrue_step ifFalse_step) sts cb)))))
+
+(FunTop flujo_ext_case_eval_a (flujo sts cb key_step &case_kv_v) (block (pop case_kv_v);A: el ultimo era cb
+	;U: ej. case: queEligio quiereGuardar hagoGuardar quiereLeer hagoLeer DFLT noEntendi
+	(var case_kv (kv_v case_kv_v))
+	(flujo_a flujo key_step sts (FunExp flujo_ext_case_onKey_a (val_k) (block
+		(var step_val_k_x (get case_kv val_k)) ;A: lo que definio
+		(var step_val_k (|| step_val_k_x (get case_kv "DFLT"))) ;A: el DFLT si no estaba
+		(var estaEnFlujo (|| (get sts step_val_k) (get flujo (+ step_val_k "_run_a"))))
+		(logmv D 1 "flujo_ext_case_onKey" estaEnFlujo key_step val_k step_val_k step_val_k_x)
+		(if (&& step_val_k estaEnFlujo)
+			(flujo_a flujo step_val_k sts cb) ;A: si es un step, lo evaluamos
+			(CallCb cb step_val_k sts))))))) ;A: no es step, lo devolvemos (ej. string)
+
+(= fRunDelay_a fRunDelay) ;U: necesito para que flujo_src_ reconozca que es async
+
+(GenFun mix_flujo (flujok wantsKeepRef) (block ;U: arma un kv con el flujo aplicando mix
+	(var r (kv))
+	(fold_e (get FlujoDefs flujok) lineaOri (block
+		(var pfx (match_str_re_v lineaOri_k (js "/(.+)\*$/")))
+		(var isSeq false) ;XXX:no se usa, lo reemplazo la extension, REUSAR el calculo de dependencias!
+		(var flujoKw (match_str_re_v (first lineaOri) (js "/(.+):$/")))
+		(if (|| (! (|| flujoKw isSeq pfx)) wantsKeepRef)
+			(set r lineaOri_k lineaOri))
+
+		(if* 
+			flujoKw ;A: para "evaluacion especial" como if, seq, etc.
+				(set r lineaOri_k 
+					`(,(+ "flujo_ext_" flujoKw "_eval_a") ,(+ "*" flujok "_flujo") flujo_sts flujo_cb ,@(map (rest lineaOri) gen_str)))
+
+			pfx (block ;A: es ej. calle1*
+			(var srcFlujok (first lineaOri))
+			(var varsKv (kv_v (kvVar (rest lineaOri))))
+			(var srcDef (mix_flujo srcFlujok wantsKeepRef))
+			(fold_e srcDef linea (block
+				(var x)
+				(set r (+ pfx "_" linea_k) 
+					(map_e linea v (return 
+						(?: (isNull (= x (get varsKv v))) (+ (?: (get srcDef v) (+ pfx "_") "") v)
+							(?: (== x v) (+ pfx "_" v) x)))))))))))
+	(return r)))
+
+
+(GenMacro set_file_flujos (fn) (block
+	(var x (gen_str_r fn))
+	(set_file_o x FlujoDefs true)))
+
+(GenMacro dump_flujo (flujok) (block
+	(var def (mix_flujo flujok true))
+	(return (commentf "FLUJO: " flujok "\n" def (deps_flujo def)))))
+
+(GenMacro FunFlujo_kv (flujo k fargs name) (block
+	(# dsc declara una funcion que se evalua con un flujo)
+	(return
+		`(FunTopA1 ,(|| name (+ flujo "_" k "_kv_a")) (args_kv flujo_cb) 
+			(flujo_get_a ,(+ flujo "_flujo") ,(gen_str k) args_kv flujo_cb)))))
+
+(GenMacro FunFlujo (flujo k fargs name) (block
+	(# dsc declara una funcion que se evalua con un flujo, bindea args y llama a kv)
+	(var fn_name (|| name (+ flujo "_" k "_a")))
+	(var fn_name_kv (|| name (+ flujo "_" k "_kv_a")))
+	(return
+		`(= ,fn_name (function ,fn_name (,@fargs flujo_cb) 
+			(,fn_name_kv (kv ,@(kvVar fargs)) flujo_cb))))))
+
+(GenMacro gen_flujo (flujok) (block
+	(# dsc genera el codigo para evaluar un flujo Y las funciones para obtener las partes)
+	(var def (mix_flujo flujok))
+	(var deps (deps_flujo def))
+	(var fargs (sort (keys_kv deps.args))) ;U: params orden alfa
+	(logmv D 1 "gen_flujo deps" deps)
+	;XXX:DETECTAR REFS CIRCULARES!
+	(return 
+		`(block
+			(flujo_define_kv ,(+ flujok  "_flujo")
+				,@(fold_e def linea (return (push (push linea_acc linea_k) linea)) (array)))
+
+			,@(fold_e deps.deps linea (block
+					(logmv D 1 "gen_flujo misArgs" linea_k fargs deps.args)
+					(return (push linea_acc `(block
+					(FunFlujo_kv ,flujok ,linea_k ,fargs)
+					(FunFlujo ,flujok ,linea_k ,fargs))))) (array)))) ))
+
+(GenMacro def_flujo (flujok &def) (fold_e (kv_v def) linea (setpv FlujoDefs flujok linea_k linea)))
+
+;VER: s/flow_con_subexp.rtl {
+(GenMacro def_flujo_x (name &defs_kv_v) (block
+	(FunVar to_anf_term (a1 path dst) (block
+		(return (fold_e a1 part (block
+			(var part_name (+ path "__" part_k))
+			(if (isArray part) 
+				(block
+					(var part_new)
+					(if (exists_kv GEN (first part)) 
+						(block ;A: requiere funcion aparte
+							(var fun_name (+ name "__" part_name))
+							(push dst.f `(FunTop ,fun_name () (return ,part))) ;A: defino funcion
+							(= part_new (array fun_name)) ;A: llamar funcion con args
+						)
+						;A: NO requiere funcion aparte
+						(= part_new (to_anf_term part part_name dst))) 
+
+				(push dst.a part_name part_new) 
+				(return (push part_acc part_name)))
+			(return (push part_acc part)) )) ;A: si no es array, copiamos
+			(array) ))))
+
+	(var dst (kv a (array) f (array)))
+	(fold_e (kv_v defs_kv_v) e (block
+		(push dst.a e_k (to_anf_term e e_k dst))))
+	(return `(block ,@dst.f (def_flujo ,name ,@dst.a)))))
+;VER }
+
+(FunTopLib rango_dep (r k p) (block ;U: calcula el rango, lazy
+	(set_dflt p (get r k))
+	(if (isNull p) (return 0))
+	(var rnk (getk p rnk))
+	(if (isNull rnk) (block ;A: no estaba calculado 
+		(= rnk (fold_e p.reqs req (return (+ req_acc (rango_dep r req))) 1))
+		(setk p rnk rnk)))
+	(return rnk)))
+
+(FunTopLib deps_flujo (flujoDef) (block
+	(# dsc las dependencias entre pasos de un flujo, el orden en que deben evaluarse y los args)
+	(var rArgs (kv))	
+	(var rDeps (init_keys_kv (keys_kv flujoDef) (FunExp x (k) (return (kv k k rnk null deps (array) reqs (array))))))
+	(fold_e flujoDef linea (if (! (match_str_re linea_k (js "/(.+)\*$/"))) (block
+		(var params (slice linea 1))
+		(if (== (third linea) "*flujo_a") (unshift params (gen_str_r (get linea 4))))
+		;A: si la converti en seq, igual detecto la dependencia
+		;XXX: mover esa "magia" a cada extension...
+
+		(fold_e params arg (block
+			(var t (parse_flujo_dep arg))
+			(if (== "sts." (first t)) (block
+				(if (get flujoDef arg) 
+					(setpv rDeps arg "deps" "[+" linea_k) ;A: es parte del flujo
+					(setpv rArgs arg "[+" linea_k)) ;A: debe ser externo
+				(setpv rDeps linea_k "reqs" "[+" arg)) ))))))
+	
+	(fold_e rDeps linea (rango_dep rDeps linea_k linea))
+	(return (kv args rArgs deps rDeps))))
+	
+(FunTopLib deps_sort_f (flujoDeps)
+	(return (FunExpSort deps_sort - k (get (get flujoDeps.deps k) "rnk"))))
+
+(FunTopLib deps_sorted (flujoDeps)
+	(return (fold_e flujoDeps.deps linea 
+		(return (push linea_acc linea)) (array) (deps_sort_f flujoDeps))))
+
+(FunTopLib deps_sorted_flujo (flujok) (block
+	(# dsc los pasos de un flujo en orden en que deben ser evaluados)
+	(var deps (deps_flujo (mix_flujo flujok)))
+	(return (deps_sorted deps))))
+
+(GenMacro flujo_define_str (name def) (return `(js ,(gen_str (flujo_define_src name (ser_json_r def))))))
+(GenMacro flujo_define_kv (name &def) (block (return `(js ,(gen_str (flujo_define_src name (kv_v def)))))))
+
+(FunTopA1 flujo_get_a (flujo k sts cb) (block ;//U: consigue un valor de un flujo
+	(= sts (|| sts (kv))) 
+	(set sts "err" (array))
+	(set sts "FlujoGetCb" (FunExp flujo_get_R () (CallCb cb (get sts k) sts)))
+
+	(set sts "FlujoGetVars" (array k))
+	(?: (get sts k) 
+		(CallCb cb (get sts k))
+		(flujo_a flujo "FlujoGetReturn" sts))))
+
+(FunTop flujo_take_stream (flujo paso params cntMax) (block ;U: toma de un stream que devuelve el flujo
+	(var s1 (fBind flujo_get_a flujo paso params fArg_here))
+	(take_stream_a s1 cntMax (fAsAsync PJ))))
+
+
+
+;------------------------------------------------------------
+;S: de app_ui
+(FunTop ucFirst (str) (return (+ (. toUpperCase (get str 0)) (. substr str 1))))
+
+(FunTop kpForRoot (aFlatK aRootK) (block ;U: convierte una clave "plana" en un path para setp
+	(var p (split_str_re aFlatK "."))
+	(var subp0 (first p)) (var subp1 (second p))
+	(if (endsWith subp1 "_id") (block 
+		(= subp0 (slice subp1 0 (- (length subp1) 3)))
+		(= subp1 "id")))
+	(return (+ "{" (?:* (! subp1) subp0 (== subp0 aRootK) subp1 (+ subp0 "{" subp1))))))
+
+	
+
+(FunTop kvByKey_flat_kv (aFlatKv aRootK) ;U: entidad.tipo: -> entidad: {tipo:
+	(return (fold_e aFlatKv e (return (?: (isNull e) e_acc (set_p e_acc (kpForRoot e_k aRootK) e))))))
+
+(FunTop kvFlat_kv (aKv aRootK dstX) (block
+	(var dst (|| dstX (kv)))
+	(var pfx (?: aRootK (+ aRootK ".") ""))
+	(fold aKv (FunExp kvFlat_kv_cada (v k) 
+		(if (isKv v) (kvFlat_kv v k dst) ;XXX: lo mas regular seria (+ pfx k)
+		(set dst (+ pfx k) v))))
+	(return dst)))
+
+(FunTopLib isQuoted (e) (return (&& (== (typeof e) "string") (. match e (js "/^\"(.*?)\"$/")))))
+(FunTopLib gen_str_r (e) (return (?: (isQuoted e) (ser_json_r e) e)))
+;------------------------------------------------------------
+;S: de xfrm
+(Const TERM_ERROR)
+
+(Const NUMBER_RE (js "/^-?\d+(\.\d+)?$/"))
+(FunTopLib isLiteral_num_exp (x) (return (match_str_re x NUMBER_RE)))
+(FunTopLib isLiteral_exp (x) (return (|| (isOneOf x (qw true false null)) (startsWith x "\"") (isLiteral_num_exp x))))
+
+(FunTopLib to_literal (x) (return (?: (isLiteral_exp x) (MiEval x) x)))
+
+(FunTopLib to_term (x) (block ;U: convierte un valor en un termino
+	(var t (typeof x))
+	(var xv)
+	(return (?:* 
+		(== t "string") (gen_str x)
+		(== t "number") (gen_str x)
+		(== t "boolean") (gen_str x)
+		(isNull x) "null"
+		(isArray x) `(array ,@(. map x to_term))	
+		(isKv x) (seqExp 
+			(= xv `(kv ,@(fold_e x p (return (push (push p_acc p_k) (to_term p))) (array))))
+			(?: (== (+ 1 (* 2 (length (keys_kv x))))a (length xv)) xv (throwf TERM_ERROR))) 
+		(throwf TERM_ERROR)))))
+
+(FunTopLib to_str_term (x) (block ;U: convierte un term en string
+	(return (?: (isArray x) (+ "(" (join_str (map_e x x1 (return (to_str_term x1))) " ") ")") x))))
+
+(FunTopLib ser_term (x) (return (to_str_term (to_term x))))
+
+(FunTopLib ser_rtlSrc (v) 
+	(return (?: (isArray v) 
+		(?: (== "`" (first v)) 
+			(ser_rtlSrc (second v)) 
+			(+ "(" (join_str (map v ser_rtlSrc) " ") ")")) 
+		v)))
+
+(FunTopLib ser_rtl_wisp (o acc pfxNewLine pfxCurLine) (block 
+	(set_dflt pfxNewLine EOL) 
+	(set_dflt pfxCurLine "") 
+	(return (?: (isArray o) 
+		(+ pfxNewLine (fold_e o e (return 
+			(+ e_acc (ser_rtl_wisp e acc (+ pfxNewLine "_ ") (?: e_k " " "")))) "")) 
+		(+ pfxCurLine o))))) 
+
+(FunTopLib ser_rtl_wisp_r (src) (return (slice (toArrays (parse src)) 1))) 
+(= ser_rtl_r ser_rtl_wisp_r) 
+
+;------------------------------------------------------------
+;S: streams
+(FunTop get_or_err (coleccion k msg) (block
+	(var r (get coleccion k))
+	(if (isNull r) (. err this (+ "No se encontro "+msg)))
+	(return r)))
+
+(FunTop regexParaPatt_lines (patt)
+  (return (RegExp (+ "\n([^\n,]*?" (. toUpperCase patt) "[^\n]*)") "g")))
+
+(FunTop filter_k_lessThan (k vMax el) (return (?: (< (get el k) vMax) el STREAM_SKIP)))
+
+(FunTop filter_rangeIncludes (range_v innerPoint) (return (?: (&& range_v (isNotNull innerPoint) (<= range_v[0] innerPoint) (<= innerPoint range_v[1])) range_v STREAM_SKIP)))
+
+(FunTop filter_eqFn (fn data) ;U: elemento si el resultado de la fn es igual para los dos elementos
+ 	(return (?: (== (CallCb fn (get data 0)) (CallCb fn (get data 1))) data STREAM_SKIP)))
+
+(FunTopA1 index_stream_a (st dst cb) (block
+	(set_dflt dst (kv))
+	(take_stream_a st null 
+		(kv push (FunExp index_stream_a_push (e) 
+			(set dst (?: (isArray e) (join_str e "\t") e) 1))) 
+		(FunExp index_stream_a_R () (CallCb cb dst)))))
+
+(FunTop filter_inIndex (index e) (block
+	(var k (?: (isArray e) (join_str e "\t") e))
+	(return (?: (get index k) e STREAM_SKIP))))
+
+(FunTop filter_unique (e sts) (block ;U: usar con stream_map y wantsStatus
+	(var index (getOrSetDflt sts "index" (kv)))
+	(var k (?: (isArray e) (join_str e "\t") e))
+	(return (?: (get index k) STREAM_SKIP (seqExp (set index k 1) e)))))
+
+(FunTop nuevo_stream_group (st n)
+	(return (nuevo_stream_map st (FunExp stream_group_mapFn (e sts) (block
+		(push (getOrSetDflt sts "v" (array)) e)
+		(if (< (lengthS sts.v) n) (return STREAM_SKIP) 
+			(block (var r sts.v) (set sts "v" null) (return r))))) 
+	true false true)))
+
+;============================================================
+;S: expresion a ANF/flujo
+(FunTopLib path_k (pp pfx) (return
+		(?: (length pp) (+ (|| pfx "f___f") (join_str (map_e pp pe (return (?: (== pe "[") "_" pe))) "")) "main")))
+
+(FunTopLib xfrm_ctl_anf_exp (eYp exp acc varMap pfx) (block (var_v e p visitWhen eYp)
+	(if (|| (== visitWhen VISITING_AFTER) (== 2 (length p))) (return null))
+	(var pp (slice (split_str_re p P_SEP_RE) 2))
+	(var pathMe (+ (path_k pp pfx) "_"))
+	(var cur (pop pp))
+	(var pathParent (path_k pp pfx))
+
+	(var isAssign (&& (isArray e) (== (first e) "=")))
+	(if isAssign (block (set varMap (second e) pathMe) (set varMap (+ "=" pathMe) (second e))))
+	;A: si era una asignacion me guarde la var para mapearla (para deps) y restaurarla (para print)
+
+	(logmev "PATHS" cur pathMe pp e eYp)
+	(setpv acc "{" pathParent "[" cur 
+		(?: (isArray e) 
+			pathMe
+			(|| (get varMap e) e)) )))
+	
+(FunTopLib anf_exp (exp pfx) (block
+	(set_dflt pfx "$AEXP")
+	(var varMap (kv))
+	(var acc (kv))
+	(take_stream (nuevo_stream_visit exp null (fBind xfrm_ctl_anf_exp fArg_0 exp acc varMap pfx)) null (array))
+	(fold_e acc exp1 (if (== (first exp1) "=") (set exp1 1 (get varMap (+ "=" (second exp1))))))
+	(return acc) ))
+
+;------------------------------------------------------------
+(FunTopLib fold_deep (o f acc wantsEmpty) (block
+	(take_stream (nuevo_stream_visit o null (FunExp fold_deep_cada (eYp)
+		(if* 
+			(== (third eYp) VISITING_AFTER) "nada"
+		 	(&& (isKv (first eYp)) (|| (! wantsEmpty) (!= 0 (length_kv (first eYp))))) "nada" 
+			(&& (isArray (first eYp)) (|| (! wantsEmpty) (!= 0 (length (first eYp))))) "nada"
+			;DFLT
+				(= acc (f (first eYp) (slice (second eYp) 2) acc))))))
+	(return acc)))
+
+(GenMacro fold_deep_e (o varName blockExp acc wantsEmpty) (return 
+	`(fold_deep ,o (FunExp ,(+ "cada_" ,varName) (,varName ,(+ varName "_k") ,(+ varName "_acc")) ,blockExp) ,(|| acc "null") ,(|| wantsEmpty "false"))))
+
+(FunTopLib map_deep (o f acc) 
+	(return (fold_deep o (FunExp map_dep_cada (e p acc) (return (set_p acc p 
+		(?:* (isArray e) (array) (isKv e) (kv) (CallCb f e))))) null true)))
+
+(GenMacro map_deep_e (o varName blockExp acc) (return 
+	`(map_deep ,o (FunExp ,(+ "map_cada_" varName) (,varName ,(+ varName "_k") ,(+ varName "_acc")) ,blockExp) ,(|| acc "null"))))
+
+(FunTopLib index_deep (kvOrArray pfx dst) (return (fold_deep_e kvOrArray e (return (?: (isObject e) e_acc (seqExp (push (getOrSetDflt e_acc (+ (|| pfx "") e) (array)) e_k) e_acc))) (|| dst (kv)))))
+
+(FunTopLib toPathV (kvOrArray pfx dst) (return (fold_deep_e kvOrArray e (return (seqExp (set e_acc e_k e) e_acc)) (|| dst (kv)))))
+;============================================================
+;S: mixer
+(= Defs (kv))
+
+(GenMacro d: (path &opts) (return ;U: una macro para definir facil cualquier cosa
+	(?:* 
+		(== 1 (length opts)) 
+			`(set_p GLOBAL ,(gen_str (+ "{" path)) ,(?: (== (first opts) "d:") `(kv) (ser_json (first opts))))
+		;dflt
+			(fold_e (kv_v opts) opt 
+				(return (push opt_acc 
+					(?:*
+						(== "d:" opt)
+							`(d: ,(+ path "{" opt_k) ,opt)
+						(== "d:" (first opt))
+							`(d: ,(+ path "{" opt_k) ,@(rest opt))
+						`(set_p GLOBAL ,(gen_str (+ "{" path "{" opt_k)) ,(ser_json opt))))) `(block)))))
+
+;------------------------------------------------------------
+;S: parsear XML (widgets, templates, etc.)
+(Const XML_OPTS_RE (js "/([a-z][a-z0-9_\.-]*)(\s*=\s*((\"[^\"]*\")|(\{[^\}]*\})|(\S*)))?/g"))
+(FunTop parse_opts_xml (opts_src dst) (block
+	(set_dflt dst (kv))
+	(take_stream (nuevo_stream_regex XML_OPTS_RE opts_src) null (FunExp acc_push (e) (block
+		(var v_src (fourth e))
+		(set dst (second e) (?:* 
+			(startsWith v_src "\"") (to_literal v_src)
+			(startsWith v_src "{") `(eval_tpl ,(trim (allButLast (rest v_src))))
+			(to_literal v_src)
+			)))))
+	(return dst)))
+
+(TEST (= xopts "type=\"checkbox\" checked={ done } onclick={ parent.toggle } selected solonumero=1 valor_suelto=true"))
+
+(Const XML_CONTENT_RE (js "/[ \r\n\t]*(\{[^}]*\})|(\$EXP:\d+\$)[ \r\n\t]*/"))
+(FunTop parse_content_xml (src exp_acc) 
+ 	(return (fold_e (split_str_re (trim src) XML_CONTENT_RE) cp 
+		(return (?: (== "" cp) cp_acc
+			(push cp_acc (?:* 
+				(startsWith cp "$EXP:") (get exp_acc (allButLast (slice cp 5))) 
+				(startsWith cp "{") `(eval_tpl ,(trim (allButLast (rest cp))))
+				cp))))
+		(array)))) 
+
+(Const XML_EXP_RE (js "/\<([a-z][a-z0-9_\.-]*)([^\>]*)\>([^\<]*)\<\/\1[^\>]*\>/gi"))
+(FunTop parse_exp_xml (src acc) (block
+	(return (replace_str_re_fn src XML_EXP_RE (FunExp tag (x tag opts_s content_s) (block
+		(var exp_k (+ "$EXP:" (length acc) "$"))
+		(var exp (kv_var _PROTO_: tag opts: (parse_opts_xml opts_s) content: (parse_content_xml content_s acc)))
+		(push acc exp)
+		(logmv D 1 "TAG" exp_k exp)
+		(return exp_k)))))))
+;XXX:ComoPero:Defs... Usar el PATRON tag=main=head=tipo=... + content (array de str o refs)	+ opts
+
+(FunTop parse_xml (src acc) (block
+	(set_dflt acc (array))	
+	(fix_point_e src srcx	(parse_exp_xml srcx acc))
+	(return (parse_content_xml srcx acc))))
+
+(FunTopLib escape_str (s) (return (replace_str_str s (js "/\"/g") (js "'\\\"'"))))
+;============================================================
+(logm "DBG" 1 "prelude.rtl 9")

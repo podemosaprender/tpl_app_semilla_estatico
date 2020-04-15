@@ -1,0 +1,251 @@
+= Data : kv
+= Src : kv
+(FunTop SlideSrc (e_k e) (block
+	(set Src e_k e)
+	(if* 
+		(match_str_re e_k "Js") (eval (xfrmJsToGlobals e))
+		(match_str_re e_k "Rtl") (evalRtl e)
+		(match_str_re e_k (js "/(.*?)Data/")) (set Data (second Re_last_match) (ser_rtl_r e)))
+	(return e)))
+
+;------------------------------------------------------------
+
+
+= SlidesTexto (+ "
+------------------------------------------------------------
+# Objetivo de hoy
+
+* Mostrarte trucos y herramientas que te pueden servir
+* Compartir cosas fáciles, divertidas, y potentes de Cs de la Computación
+* Invitarte a que me ayudes a desarrollarlos
+
+------------------------------------------------------------
+# ¿Qué me motivo?
+
+~~~java
+class HelloWorldApp {
+  public static void main(String[] args) {
+    System.out.println(\"Hello World!\"); // Prints the string to the console.
+  }
+}
+~~~
+
+Cada _lenguaje_ para programar requiere memorizar conceptos y palabras.
+
+* Aprender lleva tiempo = costo para vos / sumar gente
+* Pensar y entender lo escrito cansa = costo para modificar, bugs, hackeo
+* Frecuentemente necesitas varios ej. java + javascript + html + css + sql 
+
+------------------------------------------------------------
+# ¡Hagamos un programa que escriba código!
+
+Mi programa tendría que
+* Generar archivos en javascript, html, etc. usando _plantillas_
+* Ser muy cómodo de usar para mi y otras personas
+
+¿Por qué nuestro programa sería distinto de todos los compiladores o interpretes que ya existen y hacen eso mismo?
+
+Porque es _nuestro_, podemos elegir
+
+1. Cómo queremos escribir, cómodo, breve, simple, específico.
+2. Qué queremos que genere lo que escribimos.
+
+------------------------------------------------------------
+# Ejemplo: formulario, api, db, validaciones
+
+Si me piden una pantalla web para guardar en una base de datos clientes y facturas, necesito:
+* javascript con el formulario web (mínimo, tal vez html + javascript)
+* javascript, php, python ... en el servidor para recibir los datos
+* sql en el servidor para guardarlos en la DB
+* sql en la DB para crear tablas
+
+¡En cada uno de esos ambientes me conviene validar los datos!
+
+Encotré unas librerías que por ahí me ahorran trabajo, pero las tengo que probar ...
+[joi](https://hapi.dev/family/joi/) [sequelize](https://sequelize.readthedocs.io/en/2.0/docs/models-definition/#definition)
+
+------------------------------------------------------------
+## Empiezo por lo que yo sé y me interesa
+
+Por ej que datos necesito, que forma tienen ... los puedo escribir así, o pedirle a cualquiera que lo haga:
+
+~~~
+"
+
+(SlideSrc "TclienteData"
+"Tipo cliente : compuesto
+	razonSocial nombre	
+	cuit	
+	email 
+")
+
+(SlideSrc "TemailData"
+"Tipo email : texto
+	email 
+		minDomainSegments 2  
+")
+
+(SlideSrc "TnombreData"
+"Tipo nombre : texto letrasynumeros obligatorio
+	min 3
+	max 30
+	regex \"^[a-zA-Z]{3,30}$\"
+")
+
+"
+~~~
+
+¿Podría usarlo para generar el código que necesito?
+
+------------------------------------------------------------
+## ¡Alistate! Le decimos chau a la sintaxis (concreta)
+
+Esto tan simple que acabo de inventar
+~~~
+"
+Src.TclienteData
+"
+~~~
+
+siempre lo puedo separar en
+~~~
+"
+(ser_json Data.Tcliente 1)
+
+"
+~~~
+
+------------------------------------------------------------
+## Un lenguaje 'to rule them all'
+
+Es más, [las reglas](https://srfi.schemers.org/srfi-119/srfi-119.html) son tan simples que puedo inventar como escribir y pedirle a otras personas que lo usen __sin preocuparme__
+~~~
+"
+(SlideSrc "LoMejorData"
+"Lo mejor : que hizo la mama
+	. es 
+	el pibe
+		que programa
+")
+"
+~~~
+
+siempre lo puedo separar en
+~~~
+"
+(ser_json Data.LoMejor 1)
+"
+~~~
+
+------------------------------------------------------------
+## ¿Solamente listas? 
+
+La ventaja de las listas es que 
+* Todos los lenguajes tienen, y parecidas
+* Es fácil recorrerlas, fabricarlas, etc.
+* Y convertirlas en lo que necesite!
+
+Por ej. con una funcion simple (y se puede simplificar más)
+~~~
+"
+(SlideSrc "TipoASqlJs"
+"
+tipoAsql= (t) => 'create table if not exists '+t[1]+ '(\n' 
+	+ t.slice(3).map(p => (p[0] +' varchar(100)')).join(',\n')
+	+'\n);'
+")
+"
+~~~
+
+puedo generar
+~~~
+"
+(tipoAsql (first Data.Tcliente))
+"
+~~~
+
+------------------------------------------------------------
+## Si sos _listo_, dividís y reinás ...
+
+* Puedo generar distintos lenguajes usando la misma lista.
+* Si me equivoque en lo que generé, me cuesta arreglar sólo el generador. 
+* Le puedo dar algo fácil de escribir a la persona que entiende el negocio.
+* O a la que recien empieza a programar, testea, etc.
+* Protejo mi inversión convirtiendo listas en listas ...
+
+¿Coooooomo? ¿Listas en listas quéeee?
+
+------------------------------------------------------------
+## Un lenguaje de listas a listas (macros)
+
+Si tengo una lista puedo
+
+* generar codigo / texto / archivos
+* interpretarla (como una receta: '1. agregue la harina, 2. mezcle ...')
+* convertirla en otra lista ...
+
+Saca la cuenta:
+
+~~~
+"
+(SlideSrc "CuentaData" "2 * (3 + 4)")
+"
+~~~
+
+se convierte en
+~~~
+"
+(ser_json (first Data.Cuenta))
+"
+~~~
+
+que tal 
+~~~
+"
+(SlideSrc "EvalCuentaJs"
+"
+eval_producto= (exp) => ( 
+	(!Array.isArray(exp) ||exp[1]!='*' || Array.isArray(exp[0]) || Array.isArray(exp[2])) ? exp 
+	: (parseFloat(exp[0])*parseFloat(exp[2])) );
+eval_suma= (exp) => ( 
+	(!Array.isArray(exp) || exp[1]!='+' || Array.isArray(exp[0]) || Array.isArray(exp[2])) ? exp 
+	: (parseFloat(exp[0])+parseFloat(exp[2])) );
+eval_term= (exp) => eval_suma(eval_producto(exp)) ;
+
+eval1 = (exp, func) => { if (!Array.isArray(exp)) return exp;
+	var exp1= exp.map( term => eval1(term, func) );
+	return func(exp1);
+}
+	
+eval_todo = (exp, func) => { 
+	var exp0; 
+	while (Array.isArray(exp) && ser_json(exp0)!=ser_json(exp)) { //A: algo avanzamos
+		exp0= exp; //A: para comparar la vez que viene
+		exp= eval1(exp0,func);
+	}
+	return exp;
+}
+")
+
+"
+~~~
+
+------------------------------------------------------------
+## ¿Cómo seguimos? ¿Qué tengo para compartir?
+
+* Mi primera versión del parser de _pytonesco_ y _(tipo lisp)_ a listas
+* Mi primera implementacion 'portatil' que anda sobre java, node y cordova
+* Como 20 años de hacer lenguajes, estudiar cómo interpretar, generar ...
+
+")
+
+x= "
+tName= {
+	_t: 'string alphanum required',
+	min: 3,
+	max: 30,
+	regex: /^[a-zA-Z]{3,30}$/,
+}
+"
+;------------------------------------------------------------
+
