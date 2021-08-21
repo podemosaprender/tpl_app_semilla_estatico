@@ -112,7 +112,7 @@ function apkStatus_ui(isUploading) { //U: muestra el status del apk
 		var buildInfo= (apkData.src || apkData.apk);
 		var apkUrl= buildInfo && SEMILLA_APK_URL+'/'+buildInfo.path;
 		var apkLink= buildInfo && {cmp: 'a', children: 'aquí', href: SEMILLA_APK_URL+'/'+buildInfo.path, target: '_blank'};
-		var apkImgData= QRGenerarData(SEMILLA_APK_URL+'/'+buildInfo.path);
+		var apkImgData= buildInfo && QRGenerarData(SEMILLA_APK_URL+'/'+buildInfo.path);
 
 		if (apkData.apk) {
 			r.push(['Tu aplicación ya está lista para descargar ',apkLink]);
